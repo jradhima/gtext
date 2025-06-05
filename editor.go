@@ -65,6 +65,8 @@ type EditorState struct {
 	row          int
 	col          int
 	anchor       int
+	offset       int
+	offsetAnchor int
 }
 
 type ReadResult struct {
@@ -82,6 +84,7 @@ func NewEditorState(showNumbers bool, fileName string) EditorState {
 		showNumbers:  showNumbers,
 		inputTimeout: INPUT_TIMEOUT,
 		fileName:     fileName,
+		offset:       0,
 	}
 }
 
@@ -234,12 +237,24 @@ func (e *Editor) moveCursor(r rune) {
 				e.state.col = len(e.lines[e.state.row])
 			}
 		}
+		if e.state.row <= e.state.offsetAnchor {
+			e.state.offsetAnchor--
+		}
+		if e.state.offset > 0 {
+			e.state.offset--
+		}
 	case ARROW_DOWN:
 		if e.state.row < len(e.lines)-1 {
 			e.state.row++
 			e.state.col = e.state.anchor
 			if e.state.col > len(e.lines[e.state.row]) {
 				e.state.col = len(e.lines[e.state.row])
+			}
+		}
+		if e.state.row >= e.state.offset+e.state.numRow-1 {
+			e.state.offset++
+			if e.state.offset > e.state.offsetAnchor {
+				e.state.offsetAnchor = e.state.offset
 			}
 		}
 	case ARROW_LEFT:
@@ -297,23 +312,20 @@ func (e *Editor) drawRows(s string) string {
 		e.state.leftMargin = maxNumLen + 1
 	}
 
-	for idx, line := range e.lines {
-		if e.state.showNumbers {
-			num := fmt.Sprintf("%d", idx)
-			s += strings.Repeat(" ", maxNumLen-len(num)) + num + " "
+	for idx := e.state.offset; idx < e.state.offset+e.state.numRow-1; idx++ {
+		if idx < len(e.lines) {
+			if e.state.showNumbers {
+				num := fmt.Sprintf("%d", idx+1)
+				s += strings.Repeat(" ", maxNumLen-len(num)) + num + " "
+			}
+
+			s += e.lines[idx] + CLEAR_RIGHT + "\r\n"
+		} else {
+			s += "~" + CLEAR_RIGHT + "\r\n"
 		}
-
-		s += line + CLEAR_RIGHT + "\r\n"
 	}
-
-	for range e.state.numRow - len(e.lines) - e.state.botMargin {
-		s += "~" + CLEAR_RIGHT + "\r\n"
-	}
-
 	s += e.makeFooter()
-
 	return s
-
 }
 
 func (e *Editor) refreshScreen() {
@@ -324,7 +336,7 @@ func (e *Editor) refreshScreen() {
 	ab = e.drawRows(ab)
 	ab += fmt.Sprintf(
 		"\x1b[%d;%dH",
-		e.state.row+e.state.topMargin+1,
+		min(e.state.row+e.state.topMargin+1, e.state.numRow-1),
 		e.state.col+e.state.leftMargin+1)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
@@ -451,7 +463,6 @@ func (e *Editor) loadFile() {
 	if len(e.lines) == 0 {
 		e.lines = append(e.lines, "")
 	}
-
 }
 
 func (e *Editor) saveFile() {

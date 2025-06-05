@@ -20,7 +20,7 @@ func main() {
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
-	fileName := "sample.txt" //os.Args[1]
+	fileName := ".local/sample.txt" //os.Args[1]
 
 	editor := NewEditor(os.Stdin, fileName)
 	editor.Start()
