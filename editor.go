@@ -14,14 +14,15 @@ import (
 // const and setup
 
 const VERSION = "0.0.1"
-const ESCAPE rune = '\x1b'
-const CSI byte = '['
-const CTRL_Q rune = '\x11'
-const CTRL_S rune = '\x13'
-const SPACE rune = '\x20'
-const BACKSPACE rune = '\x08'
-const DELETE rune = 127
-const RETURN rune = 13
+const ESCAPE rune = '\x1b'    // Hex for ASCII Escape
+const CSI rune = '\x5b'       // Hex for ASCII '[' (0x5B is 91 decimal)
+const CTRL_Q rune = '\x11'    // Hex for ASCII DC1 (Device Control 1)
+const CTRL_S rune = '\x13'    // Hex for ASCII DC3 (Device Control 3)
+const SPACE rune = '\x20'     // Hex for ASCII Space
+const BACKSPACE rune = '\x08' // Hex for ASCII Backspace
+const TAB rune = '\x09'       // Hex for ASCII Horizontal Tab
+const DELETE rune = '\x7f'    // Hex for ASCII Delete (0x7F is 127 decimal)
+const RETURN rune = '\x0d'    // Hex for ASCII Carriage Return (0x0D is 13 decimal)
 const CLEAR = "\x1b[2J"
 const CLEAR_RIGHT = "\x1b[K"
 const TOP_LEFT = "\x1b[H"
@@ -29,6 +30,8 @@ const BOTTOM_RIGHT = "\x1b[999C\x1b[999B"
 const CURSOR_POSITION = "\x1b[6n"
 const HIDE_CURSOR = "\x1b[?25l"
 const SHOW_CURSOR = "\x1b[?25h"
+const BLACK_ON_WHITE = "\x1b[30;47m"
+const RESET = "\x1b[0m"
 const INPUT_TIMEOUT = 100 * time.Millisecond
 const PAGE_STEP = 20
 
@@ -163,7 +166,7 @@ func (e *Editor) readKeyPresses() {
 			if err != nil {
 				e.inputChan <- ReadResult{r: ESCAPE, err: err}
 			}
-			if len(b) == 1 && b[0] == CSI {
+			if len(b) == 1 && b[0] == byte(CSI) {
 				_, _, err := e.reader.ReadRune()
 				if err != nil {
 					e.inputChan <- ReadResult{r: ESCAPE, err: err}
@@ -311,7 +314,7 @@ func (e *Editor) makeFooter() string {
 	leftPadding := (e.state.numCol-len(welcomeString))/2 - len(editorState)
 	rightPadding := (e.state.numCol-len(welcomeString))/2 - len(e.state.fileName)
 
-	s := "save: Ctrl-S" + strings.Repeat(" ", 5) + "exit: Ctrl-Q" + CLEAR_RIGHT + "\r\n"
+	s := BLACK_ON_WHITE + "save: Ctrl-S" + strings.Repeat(" ", 5) + "exit: Ctrl-Q" + CLEAR_RIGHT + RESET + "\r\n"
 	s += editorState + strings.Repeat(" ", max(leftPadding, 0)) + welcomeString + strings.Repeat(" ", max(0, rightPadding)) + e.state.fileName + CLEAR_RIGHT
 	return s
 }
