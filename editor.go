@@ -15,15 +15,16 @@ import (
 // const and setup
 
 const VERSION = "0.0.1"
-const ESCAPE rune = '\x1b'    // Hex for ASCII Escape
-const CSI rune = '\x5b'       // Hex for ASCII '[' (0x5B is 91 decimal)
-const CTRL_Q rune = '\x11'    // Hex for ASCII DC1 (Device Control 1)
-const CTRL_S rune = '\x13'    // Hex for ASCII DC3 (Device Control 3)
-const SPACE rune = '\x20'     // Hex for ASCII Space
-const BACKSPACE rune = '\x08' // Hex for ASCII Backspace
-const TAB rune = '\x09'       // Hex for ASCII Horizontal Tab
-const DELETE rune = '\x7f'    // Hex for ASCII Delete (0x7F is 127 decimal)
-const RETURN rune = '\x0d'    // Hex for ASCII Carriage Return (0x0D is 13 decimal)
+const ESCAPE rune = '\x1b'
+const CSI rune = '\x5b'
+const CTRL_Q rune = '\x11'
+const CTRL_S rune = '\x13'
+const CTRL_F rune = '\x06'
+const SPACE rune = '\x20'
+const BACKSPACE rune = '\x08'
+const TAB rune = '\x09'
+const DELETE rune = '\x7f'
+const RETURN rune = '\x0d'
 const CLEAR = "\x1b[2J"
 const CLEAR_RIGHT = "\x1b[K"
 const TOP_LEFT = "\x1b[H"
@@ -81,7 +82,10 @@ type EditorState struct {
 	tabSize      int
 	renderedCol  int
 	renderedRow  int
-	colOffset    int
+	dirty        bool
+	search       bool
+	searchString string
+	writeStatus  string
 }
 
 type ReadResult struct {
@@ -176,6 +180,9 @@ func (e *Editor) readKeyPresses() {
 		r, _, err := e.reader.ReadRune()
 		if err != nil {
 			e.inputChan <- ReadResult{r: ESCAPE, err: err}
+		}
+		if r == CTRL_F {
+			e.state.search = true
 		}
 		if r == ESCAPE {
 			b, err := e.reader.Peek(1)
@@ -330,20 +337,37 @@ func (e *Editor) moveCursor(r rune) {
 // rendering
 
 func (e *Editor) makeFooter() string {
-	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
+	welcomeString := fmt.Sprintf("gtext -- v%s", VERSION)
 	editorState := fmt.Sprintf(
-		"[%d:%d] [lines: %d] [off: %d]",
+		"[%d:%d] [lines: %d]",
 		e.state.row+1,
 		e.state.col+1,
 		len(e.lines),
-		e.state.maxRowOffset,
 	)
 
-	leftPadding := (e.state.numCol-len(welcomeString))/2 - len(editorState)
-	rightPadding := (e.state.numCol-len(welcomeString))/2 - len(e.state.fileName)
+	s := BLACK_ON_WHITE
+	if e.state.search {
+		searchStringDisplay := fmt.Sprintf("[find: %s]", e.state.searchString)
+		s += "Exit: Return | " + searchStringDisplay
+	} else {
+		s += "Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F"
+	}
+	s += CLEAR_RIGHT + RESET + "\r\n"
 
-	s := BLACK_ON_WHITE + "save: Ctrl-S" + strings.Repeat(" ", 5) + "exit: Ctrl-Q" + CLEAR_RIGHT + RESET + "\r\n"
-	s += editorState + strings.Repeat(" ", max(leftPadding, 0)) + welcomeString + strings.Repeat(" ", max(0, rightPadding)) + e.state.fileName + CLEAR_RIGHT
+	writeStatus := ""
+	if e.state.writeStatus == "" {
+		writeStatus = e.state.fileName
+		if e.state.dirty {
+			writeStatus += "*"
+		}
+	} else {
+		writeStatus = e.state.writeStatus
+	}
+
+	leftPadding := (e.state.numCol-len(welcomeString))/2 - len(editorState)
+	rightPadding := (e.state.numCol-len(welcomeString))/2 - len(writeStatus)
+
+	s += editorState + strings.Repeat(" ", max(leftPadding, 0)) + welcomeString + strings.Repeat(" ", max(0, rightPadding)) + writeStatus + CLEAR_RIGHT
 	return s
 }
 
@@ -389,27 +413,57 @@ func (e *Editor) updateState() {
 	e.state.renderedCol = e.colToRenderCol() + e.state.leftMargin + 1
 }
 
+func (e *Editor) setDirty() {
+	e.state.dirty = true
+	e.state.writeStatus = ""
+}
+
 // text editing
 
 func (e *Editor) processKeyPress(r rune) {
-	switch r {
-	case CTRL_Q:
-		e.shutdown("Ctrl+Q", 0)
-	case CTRL_S:
-		e.saveFile()
-	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
-		e.moveCursor(r)
-	case BACKSPACE, DELETE:
-		e.deleteRune()
-	case RETURN:
-		e.insertNewLine()
-	case TAB:
-		e.handleTab()
-	default:
-		if unicode.IsPrint(r) {
-			e.writeRune(r)
+	switch e.state.search {
+	case true:
+		switch r {
+		case CTRL_Q:
+			e.shutdown("Ctrl+Q", 0)
+		case BACKSPACE, DELETE:
+			if len(e.state.searchString) > 0 {
+				e.state.searchString = e.state.searchString[:len(e.state.searchString)-1]
+			}
+		case RETURN:
+			e.state.search = false
+			e.state.searchString = ""
+		default:
+			if unicode.IsPrint(r) || r == TAB {
+				e.state.searchString += string(r)
+			}
+		}
+	case false:
+		switch r {
+		case CTRL_Q:
+			e.shutdown("Ctrl+Q", 0)
+		case CTRL_S:
+			e.saveFile()
+			e.state.dirty = false
+		case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
+			e.moveCursor(r)
+		case BACKSPACE, DELETE:
+			e.deleteRune()
+			e.setDirty()
+		case RETURN:
+			e.insertNewLine()
+			e.setDirty()
+		case TAB:
+			e.handleTab()
+			e.setDirty()
+		default:
+			if unicode.IsPrint(r) {
+				e.writeRune(r)
+				e.setDirty()
+			}
 		}
 	}
+
 }
 
 func (e *Editor) handleTab() {
@@ -553,11 +607,13 @@ func (e *Editor) saveFile() {
 	writer := bufio.NewWriter(file)
 	defer writer.Flush()
 
+	s := ""
 	for _, l := range e.lines {
-		_, err := writer.WriteString(fmt.Sprintf("%s\n", l.content))
-		if err != nil {
-			e.shutdown(fmt.Sprintf("error writing line %s: %s", l.content, err), 1)
-		}
+		s += l.content + "\n"
 	}
-
+	_, err = writer.WriteString(s)
+	if err != nil {
+		e.shutdown(fmt.Sprintf("error writing file: %s", err), 1)
+	}
+	e.state.writeStatus = fmt.Sprintf("Wrote %d bytes to disc", len(s))
 }
