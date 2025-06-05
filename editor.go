@@ -34,6 +34,8 @@ const BLACK_ON_WHITE = "\x1b[30;47m"
 const RESET = "\x1b[0m"
 const INPUT_TIMEOUT = 100 * time.Millisecond
 const PAGE_STEP = 20
+const EXPAND_TABS = true
+const TAB_SIZE = 4
 
 const (
 	ARROW_UP    rune = 0xE000
@@ -69,6 +71,9 @@ type EditorState struct {
 	col          int
 	anchor       int
 	maxRowOffset int
+	expandTabs   bool
+	tabSize      int
+	renderRow    int
 }
 
 type ReadResult struct {
@@ -87,6 +92,9 @@ func NewEditorState(showNumbers bool, fileName string) EditorState {
 		inputTimeout: INPUT_TIMEOUT,
 		fileName:     fileName,
 		maxRowOffset: 0,
+		expandTabs:   EXPAND_TABS,
+		tabSize:      TAB_SIZE,
+		renderRow:    0,
 	}
 }
 
@@ -370,6 +378,14 @@ func (e *Editor) processKeyPress(r rune) {
 		e.backspace()
 	case RETURN:
 		e.newLine()
+	case TAB:
+		if e.state.expandTabs == true {
+			for range e.state.tabSize {
+				e.write(SPACE)
+			}
+		} else {
+			e.write(r)
+		}
 	default:
 		if unicode.IsPrint(r) {
 			e.write(r)
