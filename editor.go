@@ -9,7 +9,10 @@ import (
 )
 
 const VERSION = "0.0.1"
-const ESCAPE = '\x1b'
+const LEFT_MARGIN = 3
+const TOP_MARGIN = 1
+const ESCAPE rune = '\x1b'
+const CSI byte = '['
 const CTRL_Q rune = '\x11'
 const SPACE rune = '\x20'
 const CLEAR = "\x1b[2J"
@@ -21,6 +24,15 @@ const HIDE_CURSOR = "\x1b[?25l"
 const SHOW_CURSOR = "\x1b[?25h"
 const INPUT_TIMEOUT = 100 * time.Millisecond
 const SHOW_NUMBERS = true
+
+const (
+	ARROW_UP    rune = 0xE000
+	ARROW_DOWN  rune = 0xE001
+	ARROW_RIGHT rune = 0xE002
+	ARROW_LEFT  rune = 0xE003
+	PAGE_UP     rune = 0xE004
+	PAGE_DOWN   rune = 0xE005
+)
 
 type Editor struct {
 	reader    *bufio.Reader
@@ -46,8 +58,8 @@ func NewEditorConfig(width int, height int) EditorConfig {
 	return EditorConfig{
 		ncol:         width,
 		nrow:         height,
-		cr:           1,
-		cc:           2,
+		cr:           TOP_MARGIN,
+		cc:           LEFT_MARGIN,
 		showNumbers:  SHOW_NUMBERS,
 		inputTimeout: INPUT_TIMEOUT,
 	}
@@ -62,22 +74,32 @@ func NewEditor(r *os.File, config EditorConfig) *Editor {
 
 func (e *Editor) moveCursor(r rune) {
 	switch r {
-	case 'w':
-		if e.config.cr > 1 {
+	case ARROW_UP:
+		if e.config.cr > TOP_MARGIN {
 			e.config.cr--
 		}
-	case 's':
-		if e.config.cr < e.config.nrow-1 {
+	case ARROW_DOWN:
+		if e.config.cr < e.config.nrow {
 			e.config.cr++
 		}
-	case 'a':
-		if e.config.cc > 2 {
+	case ARROW_LEFT:
+		if e.config.cc > LEFT_MARGIN {
 			e.config.cc--
+		} else if e.config.cr > TOP_MARGIN {
+			e.config.cr--
+			e.config.cc = e.config.ncol
 		}
-	case 'd':
-		if e.config.cc < e.config.ncol-1 {
+	case ARROW_RIGHT:
+		if e.config.cc < e.config.ncol {
 			e.config.cc++
+		} else if e.config.cr < e.config.nrow {
+			e.config.cr++
+			e.config.cc = LEFT_MARGIN
 		}
+	case PAGE_UP:
+		e.config.cr = TOP_MARGIN
+	case PAGE_DOWN:
+		e.config.cr = e.config.nrow
 	}
 }
 
@@ -121,24 +143,44 @@ func (e *Editor) readKeyPresses() {
 			e.inputChan <- ReadResult{r: ESCAPE, err: err}
 		}
 		if r == ESCAPE {
-			b1, err := e.reader.ReadByte()
+			b, err := e.reader.Peek(1)
 			if err != nil {
 				e.inputChan <- ReadResult{r: ESCAPE, err: err}
 			}
-			b2, err := e.reader.ReadByte()
-			if err != nil {
-				e.inputChan <- ReadResult{r: ESCAPE, err: err}
-			}
-			if b1 == '[' {
-				switch b2 {
+			if len(b) == 1 && b[0] == CSI {
+				_, _, err := e.reader.ReadRune()
+				if err != nil {
+					e.inputChan <- ReadResult{r: ESCAPE, err: err}
+				}
+				b1, _, err := e.reader.ReadRune()
+				if err != nil {
+					e.inputChan <- ReadResult{r: ESCAPE, err: err}
+				}
+				switch b1 {
 				case 'A':
-					e.inputChan <- ReadResult{r: 'w', err: err}
+					e.inputChan <- ReadResult{r: ARROW_UP, err: err}
 				case 'B':
-					e.inputChan <- ReadResult{r: 's', err: err}
+					e.inputChan <- ReadResult{r: ARROW_DOWN, err: err}
 				case 'C':
-					e.inputChan <- ReadResult{r: 'd', err: err}
+					e.inputChan <- ReadResult{r: ARROW_RIGHT, err: err}
 				case 'D':
-					e.inputChan <- ReadResult{r: 'a', err: err}
+					e.inputChan <- ReadResult{r: ARROW_LEFT, err: err}
+				case '5':
+					b2, _, err := e.reader.ReadRune()
+					if err != nil {
+						e.inputChan <- ReadResult{r: ESCAPE, err: err}
+					}
+					if b2 == '~' {
+						e.inputChan <- ReadResult{r: PAGE_UP, err: err}
+					}
+				case '6':
+					b2, _, err := e.reader.ReadRune()
+					if err != nil {
+						e.inputChan <- ReadResult{r: ESCAPE, err: err}
+					}
+					if b2 == '~' {
+						e.inputChan <- ReadResult{r: PAGE_DOWN, err: err}
+					}
 				}
 			}
 		}
@@ -152,7 +194,7 @@ func (e *Editor) processKeyPress(r rune) {
 		shutdown("Ctrl+Q", 0)
 	case 'z':
 		shutdown("z", 0)
-	case 'w', 'a', 's', 'd':
+	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN:
 		e.moveCursor(r)
 	}
 }
