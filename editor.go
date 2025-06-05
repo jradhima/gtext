@@ -66,7 +66,7 @@ type EditorState struct {
 	col          int
 	anchor       int
 	offset       int
-	offsetAnchor int
+	maxOffset    int
 }
 
 type ReadResult struct {
@@ -231,16 +231,16 @@ func (e *Editor) calculateOffsetUp() {
 	if e.state.offset > 0 {
 		e.state.offset--
 	}
-	if e.state.row < e.state.offsetAnchor {
-		e.state.offsetAnchor--
+	if e.state.row < e.state.maxOffset {
+		e.state.maxOffset--
 	}
 }
 
 func (e *Editor) calculateOffsetDown() {
 	if e.state.row >= e.state.numRow-1 {
 		e.state.offset++
-		if e.state.offset > e.state.offsetAnchor {
-			e.state.offsetAnchor = e.state.offset
+		if e.state.offset > e.state.maxOffset {
+			e.state.maxOffset = e.state.offset
 		}
 	}
 }
@@ -314,7 +314,7 @@ func (e *Editor) makeFooter() string {
 		e.state.col+1,
 		len(e.lines),
 		e.state.offset,
-		e.state.offsetAnchor,
+		e.state.maxOffset,
 	)
 
 	leftPadding := (e.state.numCol-len(welcomeString))/2 - len(editorState)
@@ -331,7 +331,7 @@ func (e *Editor) drawRows(s string) string {
 		e.state.leftMargin = maxNumLen + 1
 	}
 
-	for idx := e.state.offsetAnchor; idx < e.state.offsetAnchor+e.state.numRow-1; idx++ {
+	for idx := e.state.maxOffset; idx < e.state.maxOffset+e.state.numRow-1; idx++ {
 		if idx < len(e.lines) {
 			if e.state.showNumbers {
 				num := fmt.Sprintf("%d", idx+1)
@@ -355,7 +355,7 @@ func (e *Editor) refreshScreen() {
 	ab = e.drawRows(ab)
 	ab += fmt.Sprintf(
 		"\x1b[%d;%dH",
-		e.state.row-e.state.offsetAnchor+e.state.topMargin+1,
+		e.state.row-e.state.maxOffset+e.state.topMargin+1,
 		e.state.col+e.state.leftMargin+1)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
