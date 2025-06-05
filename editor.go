@@ -58,6 +58,44 @@ type line struct {
 	render  string
 }
 
+type position struct {
+	row int
+	col int
+}
+
+type FindPositions struct {
+	matches []position
+	current int
+}
+
+func (f *FindPositions) next() position {
+	if len(f.matches) == 0 {
+		return position{-1, -1}
+	} else if len(f.matches) == 1 {
+		return f.matches[0]
+	} else if f.current == len(f.matches)-1 {
+		f.current = 0
+		return f.matches[f.current]
+	} else {
+		f.current++
+		return f.matches[f.current]
+	}
+}
+
+func (f *FindPositions) previous() position {
+	if len(f.matches) == 0 {
+		return position{-1, -1}
+	} else if len(f.matches) == 1 {
+		return f.matches[0]
+	} else if f.current == 0 {
+		f.current = len(f.matches) - 1
+		return f.matches[f.current]
+	} else {
+		f.current--
+		return f.matches[f.current]
+	}
+}
+
 type Editor struct {
 	reader    *bufio.Reader
 	state     EditorState
@@ -83,9 +121,10 @@ type EditorState struct {
 	renderedCol  int
 	renderedRow  int
 	dirty        bool
-	search       bool
-	searchString string
+	find         bool
+	findString   string
 	writeStatus  string
+	findMatches  FindPositions
 }
 
 type ReadResult struct {
@@ -345,9 +384,9 @@ func (e *Editor) makeFooter() string {
 	)
 
 	s := BLACK_ON_WHITE
-	if e.state.search {
-		searchStringDisplay := fmt.Sprintf("[find: %s]", e.state.searchString)
-		s += "Exit: Ctrl-F | Search: Return | " + searchStringDisplay
+	if e.state.find {
+		findStringDisplay := fmt.Sprintf("[find: %s]", e.state.findString)
+		s += "Exit: Ctrl-F | Search: Return | " + findStringDisplay
 	} else {
 		s += "Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F"
 	}
@@ -420,24 +459,36 @@ func (e *Editor) setDirty() {
 // text editing
 
 func (e *Editor) processKeyPress(r rune) {
-	switch e.state.search {
+	switch e.state.find {
 	case true:
 		switch r {
 		case CTRL_Q:
 			e.shutdown("Ctrl+Q", 0)
 		case CTRL_F:
-			e.state.search = false
-			e.state.searchString = ""
+			e.state.find = false
+			e.state.findString = ""
+			e.state.findMatches = FindPositions{}
 		case BACKSPACE, DELETE:
-			if len(e.state.searchString) > 0 {
-				e.state.searchString = e.state.searchString[:len(e.state.searchString)-1]
+			if len(e.state.findString) > 0 {
+				e.state.findString = e.state.findString[:len(e.state.findString)-1]
 			}
 		case RETURN:
-			e.state.search = false
-			e.state.searchString = ""
+			e.find()
+		case ARROW_DOWN, ARROW_RIGHT:
+			pos := e.state.findMatches.next()
+			if pos.row != -1 || pos.col != -1 {
+				e.state.row = pos.row
+				e.state.col = pos.col
+			}
+		case ARROW_LEFT, ARROW_UP:
+			pos := e.state.findMatches.previous()
+			if pos.row != -1 || pos.col != -1 {
+				e.state.row = pos.row
+				e.state.col = pos.col
+			}
 		default:
 			if unicode.IsPrint(r) || r == TAB {
-				e.state.searchString += string(r)
+				e.state.findString += string(r)
 			}
 		}
 	case false:
@@ -448,7 +499,7 @@ func (e *Editor) processKeyPress(r rune) {
 			e.saveFile()
 			e.state.dirty = false
 		case CTRL_F:
-			e.state.search = true
+			e.state.find = true
 		case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 			e.moveCursor(r)
 		case BACKSPACE, DELETE:
@@ -544,6 +595,25 @@ func (e *Editor) insertNewLine() {
 }
 
 // higher level functionality
+
+func (e *Editor) find() {
+	indices := FindPositions{}
+	for i, l := range e.lines {
+		offset := 0
+		for {
+			idx := strings.Index(l.content[offset:], e.state.findString)
+			if idx == -1 {
+				break
+			} else {
+				absoluteIndex := offset + idx
+				indices.matches = append(indices.matches, position{i, absoluteIndex})
+				offset = absoluteIndex + len(e.state.findString)
+			}
+		}
+	}
+	e.state.findMatches = indices
+}
+
 func (e *Editor) Start() {
 	e.loadFile()
 
