@@ -78,7 +78,7 @@ func main() {
 
 	fileName := os.Args[1]
 
-	editorConfig := NewEditorConfig(ncol, nrow, fileName)
+	editorConfig := NewEditorConfig(ncol, nrow, true, fileName)
 	editor := NewEditor(os.Stdin, editorConfig)
 	editor.Start()
 }

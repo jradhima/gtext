@@ -2,6 +2,8 @@ this file contains sample text for the text editor
 second line
 third line
 
+this line :D works great? idk really...
+
 h
- 
+
 final line and done for testing
