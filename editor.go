@@ -275,9 +275,9 @@ func (e *Editor) Start() {
 }
 
 func (e *Editor) loadFile() {
-	file, err := os.Open(e.config.fileName)
+	file, err := os.OpenFile(e.config.fileName, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
-		shutdown(fmt.Sprintf("error opening file %s: %s", e.config.fileName, err), 1)
+		shutdown(fmt.Sprintf("error opening/creating file %s: %s", e.config.fileName, err), 1)
 	}
 	defer file.Close()
 

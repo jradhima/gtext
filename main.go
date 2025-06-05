@@ -63,6 +63,10 @@ func getCursorPosition() (int, int) {
 }
 
 func main() {
+	if len(os.Args) != 2 {
+		shutdown("usage: gtext <filename>", 1)
+	}
+
 	fmt.Println("Initializing Text Editor...")
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
@@ -72,7 +76,7 @@ func main() {
 
 	ncol, nrow := getWindowSize()
 
-	fileName := "sample.txt"
+	fileName := os.Args[1]
 
 	editorConfig := NewEditorConfig(ncol, nrow, fileName)
 	editor := NewEditor(os.Stdin, editorConfig)
