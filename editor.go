@@ -79,7 +79,7 @@ func NewEditorState(showNumbers bool, fileName string) EditorState {
 		numRow:       1,
 		topMargin:    0,
 		leftMargin:   0,
-		botMargin:    1,
+		botMargin:    2,
 		showNumbers:  showNumbers,
 		inputTimeout: INPUT_TIMEOUT,
 		fileName:     fileName,
@@ -233,7 +233,7 @@ func (e *Editor) calculateRowOffsetUp() {
 }
 
 func (e *Editor) calculateRowOffsetDown() {
-	if e.state.row-e.state.maxRowOffset >= e.state.numRow-1 {
+	if e.state.row-e.state.maxRowOffset >= e.state.numRow-e.state.botMargin {
 		e.state.maxRowOffset++
 	}
 }
@@ -250,7 +250,7 @@ func (e *Editor) moveCursor(r rune) {
 			e.calculateRowOffsetUp()
 		}
 	case ARROW_DOWN:
-		if e.state.row < len(e.lines)-1 {
+		if e.state.row < len(e.lines)-e.state.botMargin {
 			e.state.row++
 			e.state.col = e.state.anchor
 			if e.state.col > len(e.lines[e.state.row]) {
@@ -271,7 +271,7 @@ func (e *Editor) moveCursor(r rune) {
 	case ARROW_RIGHT:
 		if e.state.col < len(e.lines[e.state.row]) {
 			e.state.col++
-		} else if e.state.row < len(e.lines)-1 {
+		} else if e.state.row < len(e.lines)-e.state.botMargin {
 			e.state.row++
 			e.state.col = 0
 			e.calculateRowOffsetDown()
@@ -299,7 +299,6 @@ func (e *Editor) moveCursor(r rune) {
 // rendering
 
 func (e *Editor) makeFooter() string {
-	helpString := "save: Ctrl-S" + strings.Repeat(" ", 5) + "exit: Ctrl-Q"
 	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
 	editorState := fmt.Sprintf(
 		"[%d:%d] [lines: %d] [off: %d]",
@@ -310,20 +309,21 @@ func (e *Editor) makeFooter() string {
 	)
 
 	leftPadding := (e.state.numCol-len(welcomeString))/2 - len(editorState)
-	rightPadding := (e.state.numCol-len(welcomeString))/2 - len(helpString)
+	rightPadding := (e.state.numCol-len(welcomeString))/2 - len(e.state.fileName)
 
-	s := editorState + strings.Repeat(" ", max(leftPadding, 0)) + welcomeString + strings.Repeat(" ", max(0, rightPadding)) + helpString + CLEAR_RIGHT
+	s := "save: Ctrl-S" + strings.Repeat(" ", 5) + "exit: Ctrl-Q" + CLEAR_RIGHT + "\r\n"
+	s += editorState + strings.Repeat(" ", max(leftPadding, 0)) + welcomeString + strings.Repeat(" ", max(0, rightPadding)) + e.state.fileName + CLEAR_RIGHT
 	return s
 }
 
 func (e *Editor) drawRows(s string) string {
 	maxNumLen := 0
 	if e.state.showNumbers {
-		maxNumLen = len(fmt.Sprintf("%d", len(e.lines)-1))
+		maxNumLen = len(fmt.Sprintf("%d", len(e.lines)-e.state.botMargin))
 		e.state.leftMargin = maxNumLen + 1
 	}
 
-	for idx := e.state.maxRowOffset; idx < e.state.maxRowOffset+e.state.numRow-1; idx++ {
+	for idx := e.state.maxRowOffset; idx < e.state.maxRowOffset+e.state.numRow-e.state.botMargin; idx++ {
 		if idx < len(e.lines) {
 			if e.state.showNumbers {
 				num := fmt.Sprintf("%d", idx+1)
