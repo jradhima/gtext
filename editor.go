@@ -400,25 +400,29 @@ func (e *Editor) processKeyPress(r rune) {
 	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 		e.moveCursor(r)
 	case BACKSPACE, DELETE:
-		e.backspace()
+		e.deleteRune()
 	case RETURN:
-		e.newLine()
+		e.insertNewLine()
 	case TAB:
-		if e.state.expandTabs == true {
-			for range e.state.tabSize {
-				e.write(SPACE)
-			}
-		} else {
-			e.write(r)
-		}
+		e.handleTab()
 	default:
 		if unicode.IsPrint(r) {
-			e.write(r)
+			e.writeRune(r)
 		}
 	}
 }
 
-func (e *Editor) write(r rune) {
+func (e *Editor) handleTab() {
+	if e.state.expandTabs == true {
+		for range e.state.tabSize {
+			e.writeRune(SPACE)
+		}
+	} else {
+		e.writeRune(TAB)
+	}
+}
+
+func (e *Editor) writeRune(r rune) {
 	row, idx := e.state.row, e.state.col
 	if row < 0 || idx < 0 {
 		return
@@ -439,7 +443,7 @@ func (e *Editor) write(r rune) {
 	e.moveCursor(ARROW_RIGHT)
 }
 
-func (e *Editor) backspace() {
+func (e *Editor) deleteRune() {
 	row, idx := e.state.row, e.state.col
 	if row < 0 || idx < 0 || len(e.lines) == 0 {
 		return
@@ -467,7 +471,7 @@ func (e *Editor) backspace() {
 	e.lines[row].render = e.render(e.lines[row].content)
 }
 
-func (e *Editor) newLine() {
+func (e *Editor) insertNewLine() {
 	row, idx := e.state.row, e.state.col
 	if row < 0 || idx < 0 {
 		return
