@@ -227,6 +227,24 @@ func (e *Editor) readKeyPresses() {
 	}
 }
 
+func (e *Editor) calculateOffsetUp() {
+	if e.state.offset > 0 {
+		e.state.offset--
+	}
+	if e.state.row < e.state.offsetAnchor {
+		e.state.offsetAnchor--
+	}
+}
+
+func (e *Editor) calculateOffsetDown() {
+	if e.state.row >= e.state.numRow-1 {
+		e.state.offset++
+		if e.state.offset > e.state.offsetAnchor {
+			e.state.offsetAnchor = e.state.offset
+		}
+	}
+}
+
 func (e *Editor) moveCursor(r rune) {
 	switch r {
 	case ARROW_UP:
@@ -236,12 +254,7 @@ func (e *Editor) moveCursor(r rune) {
 			if e.state.col > len(e.lines[e.state.row]) {
 				e.state.col = len(e.lines[e.state.row])
 			}
-			if e.state.offset > 0 {
-				e.state.offset--
-			}
-			if e.state.row < e.state.offsetAnchor {
-				e.state.offsetAnchor--
-			}
+			e.calculateOffsetUp()
 		}
 	case ARROW_DOWN:
 		if e.state.row < len(e.lines)-1 {
@@ -250,12 +263,7 @@ func (e *Editor) moveCursor(r rune) {
 			if e.state.col > len(e.lines[e.state.row]) {
 				e.state.col = len(e.lines[e.state.row])
 			}
-			if e.state.row >= e.state.numRow-1 {
-				e.state.offset++
-				if e.state.offset > e.state.offsetAnchor {
-					e.state.offsetAnchor = e.state.offset
-				}
-			}
+			e.calculateOffsetDown()
 		}
 
 	case ARROW_LEFT:
@@ -264,6 +272,7 @@ func (e *Editor) moveCursor(r rune) {
 		} else if e.state.row > 0 {
 			e.state.row--
 			e.state.col = len(e.lines[e.state.row])
+			e.calculateOffsetUp()
 		}
 		e.state.anchor = e.state.col
 	case ARROW_RIGHT:
@@ -272,6 +281,7 @@ func (e *Editor) moveCursor(r rune) {
 		} else if e.state.row < len(e.lines)-1 {
 			e.state.row++
 			e.state.col = 0
+			e.calculateOffsetDown()
 		}
 		e.state.anchor = e.state.col
 	case PAGE_UP:
@@ -289,6 +299,7 @@ func (e *Editor) moveCursor(r rune) {
 	case NEW_LINE:
 		e.state.row++
 		e.state.col = 0
+		e.calculateOffsetDown()
 	}
 }
 
