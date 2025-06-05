@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const VERSION = "0.0.1"
@@ -13,6 +14,9 @@ const ESCAPE rune = '\x1b'
 const CSI byte = '['
 const CTRL_Q rune = '\x11'
 const SPACE rune = '\x20'
+const BACKSPACE rune = '\x08'
+const DELETE rune = 127
+const RETURN rune = 13
 const CLEAR = "\x1b[2J"
 const CLEAR_RIGHT = "\x1b[K"
 const TOP_LEFT = "\x1b[H"
@@ -55,12 +59,16 @@ type EditorConfig struct {
 }
 
 type EditorState struct {
-	currentRow int
-	currentCol int
+	row int
+	col int
 }
 
-func NewEditorState(cursorRow int, cursorCol int) EditorState {
-	return EditorState{currentRow: cursorRow, currentCol: cursorCol}
+func (e *Editor) getSliceCoords() (int, int) {
+	return e.state.row - e.config.topMargin, e.state.col - e.config.leftMargin
+}
+
+func NewEditorState(row int, col int) EditorState {
+	return EditorState{row: row, col: col}
 }
 
 type ReadResult struct {
@@ -70,8 +78,9 @@ type ReadResult struct {
 
 func NewEditorConfig(width int, height int, fileName string) EditorConfig {
 	topMargin := 1
-	botMargin := 1
 	leftMargin := 1
+	botMargin := 1
+
 	return EditorConfig{
 		numCol:       width,
 		numRow:       height,
@@ -96,36 +105,40 @@ func NewEditor(r *os.File, config EditorConfig) *Editor {
 }
 
 func (e *Editor) moveCursor(r rune) {
-	cr := &e.state.currentRow
-	cc := &e.state.currentCol
+	row := &e.state.row
+	col := &e.state.col
 	switch r {
 	case ARROW_UP:
-		if *cr > e.config.topMargin {
-			*cr--
-			if *cc > len(e.lines[*cr-e.config.topMargin]) {
-				*cc = len(e.lines[*cr-e.config.topMargin])
+		if *row > e.config.topMargin {
+			*row--
+			lineRow, _ := e.getSliceCoords()
+			if *col > len(e.lines[lineRow]) {
+				*col = len(e.lines[lineRow]) + 1
 			}
 		}
 	case ARROW_DOWN:
-		if *cr < len(e.lines) {
-			*cr++
-			if *cc > len(e.lines[*cr-e.config.topMargin]) {
-				*cc = len(e.lines[*cr-e.config.topMargin])
+		if *row < len(e.lines) {
+			*row++
+			lineRow, _ := e.getSliceCoords()
+			if *col > len(e.lines[lineRow]) {
+				*col = len(e.lines[lineRow]) + 1
 			}
 		}
 	case ARROW_LEFT:
-		if *cc > e.config.leftMargin {
-			*cc--
-		} else if *cr > e.config.topMargin {
-			*cr--
-			*cc = len(e.lines[*cr-e.config.topMargin])
+		if *col > e.config.leftMargin {
+			*col--
+		} else if *row > e.config.topMargin {
+			*row--
+			lineRow, _ := e.getSliceCoords()
+			*col = len(e.lines[lineRow])
 		}
 	case ARROW_RIGHT:
-		if *cc < len(e.lines[*cr-e.config.topMargin]) {
-			*cc++
-		} else if *cr < len(e.lines) {
-			*cr++
-			*cc = e.config.leftMargin
+		lineRow, _ := e.getSliceCoords()
+		if *col <= len(e.lines[lineRow]) {
+			*col++
+		} else if *row < len(e.lines) {
+			*row++
+			*col = e.config.leftMargin
 		}
 	case PAGE_UP:
 		for range PAGE_STEP {
@@ -136,28 +149,35 @@ func (e *Editor) moveCursor(r rune) {
 			e.moveCursor(ARROW_DOWN)
 		}
 	case HOME:
-		e.state.currentCol = e.config.leftMargin
+		e.state.col = e.config.leftMargin
 	case END:
-		e.state.currentCol = e.config.numCol
+		e.state.col = e.config.numCol
 	}
 }
 
-func (e *Editor) drawRows(s string) string {
-	// welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
-	// padding := (e.config.numCol - len(welcomeString)) / 2
-	// s += strings.Repeat(" ", padding) + welcomeString + CLEAR_RIGHT + "\r\n"
+func (e *Editor) makeFooter() string {
+	helpString := "exit: Ctrl-Q or z"
+	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
+	editorState := fmt.Sprintf("[%d:%d] lines: %d", e.state.row, e.state.col, len(e.lines))
 
+	leftPadding := (e.config.numCol-len(welcomeString))/2 - len(editorState)
+	rightPadding := (e.config.numCol-len(welcomeString))/2 - len(helpString)
+
+	s := editorState + strings.Repeat(" ", leftPadding) + welcomeString + strings.Repeat(" ", rightPadding) + helpString + CLEAR_RIGHT
+	return s
+}
+
+func (e *Editor) drawRows(s string) string {
 	for _, line := range e.lines {
 		s += line + CLEAR_RIGHT + "\r\n"
 	}
 
-	for range e.config.numRow - len(e.lines) - e.config.botMargin - 1 {
+	for range e.config.numRow - len(e.lines) - e.config.botMargin {
 		s += "~" + CLEAR_RIGHT + "\r\n"
 	}
 
-	helpString := "press Ctrl-Q or z to exit"
-	padding := (e.config.numCol - len(helpString)) / 2
-	s += fmt.Sprintf("[%d:%d]", e.state.currentRow, e.state.currentCol) + strings.Repeat(" ", padding) + helpString + CLEAR_RIGHT
+	s += e.makeFooter()
+
 	return s
 
 }
@@ -169,8 +189,8 @@ func (e *Editor) refreshScreen() {
 	ab = e.drawRows(ab)
 	ab += fmt.Sprintf(
 		"\x1b[%d;%dH",
-		e.state.currentRow,
-		e.state.currentCol)
+		e.state.row,
+		e.state.col)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
 }
@@ -253,7 +273,43 @@ func (e *Editor) processKeyPress(r rune) {
 		shutdown("z", 0)
 	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 		e.moveCursor(r)
+	case BACKSPACE, DELETE:
+		e.backspace()
+	case RETURN:
+		e.newLine()
+	default:
+		if unicode.IsPrint(r) {
+			e.write(r)
+		}
 	}
+}
+
+func (e *Editor) write(r rune) {
+	row, col := e.getSliceCoords()
+	line := e.lines[row]
+	e.lines[row] = fmt.Sprintf("%s%c%s", line[:col+1], r, line[col+1:])
+	e.moveCursor(ARROW_RIGHT)
+}
+
+func (e *Editor) backspace() {
+	row, col := e.getSliceCoords()
+	line := e.lines[row]
+	e.lines[row] = fmt.Sprintf("%s%s", line[:col-1], line[col:])
+	e.moveCursor(ARROW_LEFT)
+}
+
+func (e *Editor) newLine() {
+	row, _ := e.getSliceCoords()
+	newLines := append(e.lines[:row], "")
+	newLines = append(newLines, e.lines[row:]...)
+	e.lines = newLines
+	// currentIndex := e.state.col - 1
+	// line := e.lines[currentLine]
+	// if line == "" {
+
+	// }
+	// e.lines[currentLine] = fmt.Sprintf("%s%c%s", line[:currentIndex], r, line[currentIndex:])
+	// e.moveCursor(ARROW_RIGHT)
 }
 
 func (e *Editor) Start() {
