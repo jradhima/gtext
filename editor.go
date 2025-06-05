@@ -64,8 +64,9 @@ type EditorConfig struct {
 }
 
 type EditorState struct {
-	row int
-	col int
+	row    int
+	col    int
+	anchor int
 }
 
 type ReadResult struct {
@@ -74,11 +75,11 @@ type ReadResult struct {
 }
 
 func (e *Editor) getSliceCoords() (int, int) {
-	return e.state.row - e.config.topMargin, e.state.col - e.config.leftMargin
+	return e.state.row - 1, e.state.col - 1
 }
 
 func NewEditorState(row int, col int) EditorState {
-	return EditorState{row: row, col: col}
+	return EditorState{row: row, col: col, anchor: col}
 }
 
 func NewEditorConfig(width int, height int, fileName string) EditorConfig {
@@ -190,17 +191,19 @@ func (e *Editor) moveCursor(r rune) {
 	case ARROW_UP:
 		if e.state.row > e.config.topMargin {
 			e.state.row--
-			lineRow, _ := e.getSliceCoords()
-			if e.state.col > len(e.lines[lineRow]) {
-				e.state.col = len(e.lines[lineRow]) + 1
+			e.state.col = e.state.anchor
+			row, _ := e.getSliceCoords()
+			if e.state.col > len(e.lines[row]) {
+				e.state.col = len(e.lines[row]) + e.config.leftMargin
 			}
 		}
 	case ARROW_DOWN:
 		if e.state.row < len(e.lines) {
 			e.state.row++
-			lineRow, _ := e.getSliceCoords()
-			if e.state.col > len(e.lines[lineRow]) {
-				e.state.col = len(e.lines[lineRow]) + 1
+			e.state.col = e.state.anchor
+			row, _ := e.getSliceCoords()
+			if e.state.col > len(e.lines[row]) {
+				e.state.col = len(e.lines[row]) + e.config.leftMargin
 			}
 		}
 	case ARROW_LEFT:
@@ -209,16 +212,18 @@ func (e *Editor) moveCursor(r rune) {
 		} else if e.state.row > e.config.topMargin {
 			e.state.row--
 			lineRow, _ := e.getSliceCoords()
-			e.state.col = len(e.lines[lineRow]) + 1
+			e.state.col = len(e.lines[lineRow]) + e.config.leftMargin
 		}
+		e.state.anchor = e.state.col
 	case ARROW_RIGHT:
-		lineRow, _ := e.getSliceCoords()
-		if e.state.col <= len(e.lines[lineRow]) {
+		row, _ := e.getSliceCoords()
+		if e.state.col < len(e.lines[row])+e.config.leftMargin {
 			e.state.col++
 		} else if e.state.row < len(e.lines) {
 			e.state.row++
 			e.state.col = e.config.leftMargin
 		}
+		e.state.anchor = e.state.col
 	case PAGE_UP:
 		for range PAGE_STEP {
 			e.moveCursor(ARROW_UP)
