@@ -9,6 +9,8 @@ import (
 	"unicode"
 )
 
+// const and setup
+
 const VERSION = "0.0.1"
 const ESCAPE rune = '\x1b'
 const CSI byte = '['
@@ -39,6 +41,8 @@ const (
 	END         rune = 0xE007
 )
 
+// structs and types
+
 type Editor struct {
 	reader    *bufio.Reader
 	config    EditorConfig
@@ -63,17 +67,17 @@ type EditorState struct {
 	col int
 }
 
+type ReadResult struct {
+	r   rune
+	err error
+}
+
 func (e *Editor) getSliceCoords() (int, int) {
 	return e.state.row - e.config.topMargin, e.state.col - e.config.leftMargin
 }
 
 func NewEditorState(row int, col int) EditorState {
 	return EditorState{row: row, col: col}
-}
-
-type ReadResult struct {
-	r   rune
-	err error
 }
 
 func NewEditorConfig(width int, height int, fileName string) EditorConfig {
@@ -104,96 +108,7 @@ func NewEditor(r *os.File, config EditorConfig) *Editor {
 	}
 }
 
-func (e *Editor) moveCursor(r rune) {
-	row := &e.state.row
-	col := &e.state.col
-	switch r {
-	case ARROW_UP:
-		if *row > e.config.topMargin {
-			*row--
-			lineRow, _ := e.getSliceCoords()
-			if *col > len(e.lines[lineRow]) {
-				*col = len(e.lines[lineRow]) + 1
-			}
-		}
-	case ARROW_DOWN:
-		if *row < len(e.lines) {
-			*row++
-			lineRow, _ := e.getSliceCoords()
-			if *col > len(e.lines[lineRow]) {
-				*col = len(e.lines[lineRow]) + 1
-			}
-		}
-	case ARROW_LEFT:
-		if *col > e.config.leftMargin {
-			*col--
-		} else if *row > e.config.topMargin {
-			*row--
-			lineRow, _ := e.getSliceCoords()
-			*col = len(e.lines[lineRow])
-		}
-	case ARROW_RIGHT:
-		lineRow, _ := e.getSliceCoords()
-		if *col <= len(e.lines[lineRow]) {
-			*col++
-		} else if *row < len(e.lines) {
-			*row++
-			*col = e.config.leftMargin
-		}
-	case PAGE_UP:
-		for range PAGE_STEP {
-			e.moveCursor(ARROW_UP)
-		}
-	case PAGE_DOWN:
-		for range PAGE_STEP {
-			e.moveCursor(ARROW_DOWN)
-		}
-	case HOME:
-		e.state.col = e.config.leftMargin
-	case END:
-		e.state.col = e.config.numCol
-	}
-}
-
-func (e *Editor) makeFooter() string {
-	helpString := "exit: Ctrl-Q or z"
-	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
-	editorState := fmt.Sprintf("[%d:%d] lines: %d", e.state.row, e.state.col, len(e.lines))
-
-	leftPadding := (e.config.numCol-len(welcomeString))/2 - len(editorState)
-	rightPadding := (e.config.numCol-len(welcomeString))/2 - len(helpString)
-
-	s := editorState + strings.Repeat(" ", leftPadding) + welcomeString + strings.Repeat(" ", rightPadding) + helpString + CLEAR_RIGHT
-	return s
-}
-
-func (e *Editor) drawRows(s string) string {
-	for _, line := range e.lines {
-		s += line + CLEAR_RIGHT + "\r\n"
-	}
-
-	for range e.config.numRow - len(e.lines) - e.config.botMargin {
-		s += "~" + CLEAR_RIGHT + "\r\n"
-	}
-
-	s += e.makeFooter()
-
-	return s
-
-}
-
-func (e *Editor) refreshScreen() {
-	ab := ""
-	ab += HIDE_CURSOR
-	ab += TOP_LEFT
-	ab = e.drawRows(ab)
-	ab += fmt.Sprintf(
-		"\x1b[%d;%dH",
-		e.state.row,
-		e.state.col)
-	ab += SHOW_CURSOR
-	fmt.Print(ab)
-}
+// terminal functionality
 
 func (e *Editor) readKeyPresses() {
 	for {
@@ -265,6 +180,99 @@ func (e *Editor) readKeyPresses() {
 	}
 }
 
+func (e *Editor) moveCursor(r rune) {
+	switch r {
+	case ARROW_UP:
+		if e.state.row > e.config.topMargin {
+			e.state.row--
+			lineRow, _ := e.getSliceCoords()
+			if e.state.col > len(e.lines[lineRow]) {
+				e.state.col = len(e.lines[lineRow]) + 1
+			}
+		}
+	case ARROW_DOWN:
+		if e.state.row < len(e.lines) {
+			e.state.row++
+			lineRow, _ := e.getSliceCoords()
+			if e.state.col > len(e.lines[lineRow]) {
+				e.state.col = len(e.lines[lineRow]) + 1
+			}
+		}
+	case ARROW_LEFT:
+		if e.state.col > e.config.leftMargin {
+			e.state.col--
+		} else if e.state.row > e.config.topMargin {
+			e.state.row--
+			lineRow, _ := e.getSliceCoords()
+			e.state.col = len(e.lines[lineRow]) + 1
+		}
+	case ARROW_RIGHT:
+		lineRow, _ := e.getSliceCoords()
+		if e.state.col <= len(e.lines[lineRow]) {
+			e.state.col++
+		} else if e.state.row < len(e.lines) {
+			e.state.row++
+			e.state.col = e.config.leftMargin
+		}
+	case PAGE_UP:
+		for range PAGE_STEP {
+			e.moveCursor(ARROW_UP)
+		}
+	case PAGE_DOWN:
+		for range PAGE_STEP {
+			e.moveCursor(ARROW_DOWN)
+		}
+	case HOME:
+		e.state.col = e.config.leftMargin
+	case END:
+		e.state.col = e.config.numCol
+	}
+}
+
+// rendering
+
+func (e *Editor) makeFooter() string {
+	helpString := "exit: Ctrl-Q or z"
+	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
+	editorState := fmt.Sprintf("[%d:%d] lines: %d", e.state.row, e.state.col, len(e.lines))
+
+	leftPadding := (e.config.numCol-len(welcomeString))/2 - len(editorState)
+	rightPadding := (e.config.numCol-len(welcomeString))/2 - len(helpString)
+
+	s := editorState + strings.Repeat(" ", leftPadding) + welcomeString + strings.Repeat(" ", rightPadding) + helpString + CLEAR_RIGHT
+	return s
+}
+
+func (e *Editor) drawRows(s string) string {
+	for _, line := range e.lines {
+		s += line + CLEAR_RIGHT + "\r\n"
+	}
+
+	for range e.config.numRow - len(e.lines) - e.config.botMargin {
+		s += "~" + CLEAR_RIGHT + "\r\n"
+	}
+
+	s += e.makeFooter()
+
+	return s
+
+}
+
+func (e *Editor) refreshScreen() {
+	ab := ""
+	ab += HIDE_CURSOR
+	ab += TOP_LEFT
+	ab = e.drawRows(ab)
+	ab += fmt.Sprintf(
+		"\x1b[%d;%dH",
+		e.state.row,
+		e.state.col)
+	ab += SHOW_CURSOR
+	fmt.Print(ab)
+}
+
+// text editing
+
 func (e *Editor) processKeyPress(r rune) {
 	switch r {
 	case CTRL_Q:
@@ -285,16 +293,38 @@ func (e *Editor) processKeyPress(r rune) {
 }
 
 func (e *Editor) write(r rune) {
-	row, col := e.getSliceCoords()
+	row, idx := e.getSliceCoords()
 	line := e.lines[row]
-	e.lines[row] = fmt.Sprintf("%s%c%s", line[:col+1], r, line[col+1:])
+	if line == "" {
+		e.lines[row] = fmt.Sprintf("%c", r)
+	} else if idx == 0 {
+		e.lines[row] = fmt.Sprintf("%c%s", r, line)
+	} else if idx == len(line)+1 {
+		e.lines[row] = fmt.Sprintf("%s%c", line, r)
+	} else {
+		e.lines[row] = fmt.Sprintf("%s%c%s", line[:idx], r, line[idx:])
+	}
 	e.moveCursor(ARROW_RIGHT)
 }
 
 func (e *Editor) backspace() {
-	row, col := e.getSliceCoords()
+	row, idx := e.getSliceCoords()
 	line := e.lines[row]
-	e.lines[row] = fmt.Sprintf("%s%s", line[:col-1], line[col:])
+	if len(e.lines) == 0 { // case empty file
+		return
+	} else if idx == 0 { //case first position
+		if row == 0 { // top row do nothing
+			return
+		} else if row == len(e.lines)-1 { // last row simple operation
+			e.lines[row-1] = fmt.Sprintf("%s%s", e.lines[row-1], line)
+			e.lines = e.lines[:row]
+		} else { // in the middle need appending
+			e.lines[row-1] = fmt.Sprintf("%s%s", e.lines[row-1], line)
+			e.lines = append(e.lines[:row], e.lines[row+1:]...)
+		}
+	} else { // somewhere in the middle
+		e.lines[row] = fmt.Sprintf("%s%s", line[:idx-1], line[idx:])
+	}
 	e.moveCursor(ARROW_LEFT)
 }
 
@@ -312,6 +342,7 @@ func (e *Editor) newLine() {
 	// e.moveCursor(ARROW_RIGHT)
 }
 
+// higher level functionality
 func (e *Editor) Start() {
 	e.loadFile()
 
