@@ -68,6 +68,14 @@ type FindPositions struct {
 	current int
 }
 
+func (f *FindPositions) first() position {
+	if len(f.matches) == 0 {
+		return position{-1, -1}
+	} else {
+		return f.matches[0]
+	}
+}
+
 func (f *FindPositions) next() position {
 	if len(f.matches) == 0 {
 		return position{-1, -1}
@@ -382,7 +390,11 @@ func (e *Editor) makeFooter() string {
 	s := BLACK_ON_WHITE
 	if e.state.find {
 		findStringDisplay := fmt.Sprintf("[find: %s]", e.state.findString)
-		s += "Exit: Ctrl-F | Search: Return | " + findStringDisplay
+		s += "Exit: Ctrl-F | Search: Return/Enter | Next Match: Right, Down | Previous Match: Left, Up | " + findStringDisplay
+		n := len(e.state.findMatches.matches)
+		if n > 0 {
+			s += fmt.Sprintf(" [match: %d/%d]", e.state.findMatches.current+1, n)
+		}
 	} else {
 		s += "Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F"
 	}
@@ -471,6 +483,11 @@ func (e *Editor) processKeyPress(r rune) {
 			}
 		case RETURN:
 			e.find()
+			pos := e.state.findMatches.first()
+			if pos.row != -1 || pos.col != -1 {
+				e.state.row = pos.row
+				e.state.col = pos.col
+			}
 		case ARROW_DOWN, ARROW_RIGHT:
 			pos := e.state.findMatches.next()
 			if pos.row != -1 || pos.col != -1 {
