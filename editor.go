@@ -32,6 +32,8 @@ const (
 	ARROW_LEFT  rune = 0xE003
 	PAGE_UP     rune = 0xE004
 	PAGE_DOWN   rune = 0xE005
+	HOME        rune = 0xE006
+	END         rune = 0xE007
 )
 
 type Editor struct {
@@ -100,6 +102,10 @@ func (e *Editor) moveCursor(r rune) {
 		e.config.cr = TOP_MARGIN
 	case PAGE_DOWN:
 		e.config.cr = e.config.nrow
+	case HOME:
+		e.config.cc = LEFT_MARGIN
+	case END:
+		e.config.cc = e.config.ncol
 	}
 }
 
@@ -181,7 +187,25 @@ func (e *Editor) readKeyPresses() {
 					if b2 == '~' {
 						e.inputChan <- ReadResult{r: PAGE_DOWN, err: err}
 					}
+				case '1', '7', 'H':
+					b2, _, err := e.reader.ReadRune()
+					if err != nil {
+						e.inputChan <- ReadResult{r: ESCAPE, err: err}
+					}
+					if b2 == '~' {
+						e.inputChan <- ReadResult{r: HOME, err: err}
+					}
+				case '4', '8', 'F':
+					b2, _, err := e.reader.ReadRune()
+					if err != nil {
+						e.inputChan <- ReadResult{r: ESCAPE, err: err}
+					}
+					if b2 == '~' {
+						e.inputChan <- ReadResult{r: END, err: err}
+					}
+
 				}
+
 			}
 		}
 		e.inputChan <- ReadResult{r: r, err: err}
@@ -194,7 +218,7 @@ func (e *Editor) processKeyPress(r rune) {
 		shutdown("Ctrl+Q", 0)
 	case 'z':
 		shutdown("z", 0)
-	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN:
+	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 		e.moveCursor(r)
 	}
 }
