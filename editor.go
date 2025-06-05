@@ -294,6 +294,9 @@ func (e *Editor) processKeyPress(r rune) {
 
 func (e *Editor) write(r rune) {
 	row, idx := e.getSliceCoords()
+	if row < 0 || idx < 0 {
+		return
+	}
 	line := e.lines[row]
 	if line == "" {
 		e.lines[row] = fmt.Sprintf("%c", r)
@@ -309,13 +312,16 @@ func (e *Editor) write(r rune) {
 
 func (e *Editor) backspace() {
 	row, idx := e.getSliceCoords()
-	line := e.lines[row]
-	if len(e.lines) == 0 { // case empty file
+	if row < 0 || idx < 0 || len(e.lines) == 0 {
 		return
-	} else if idx == 0 { //case first position
+	}
+	line := e.lines[row]
+	if idx == 0 { //case first position
 		if row == 0 { // top row do nothing
 			return
-		} else if row == len(e.lines)-1 { // last row simple operation
+		}
+		e.moveCursor(ARROW_LEFT)
+		if row == len(e.lines)-1 { // last row simple operation
 			e.lines[row-1] = fmt.Sprintf("%s%s", e.lines[row-1], line)
 			e.lines = e.lines[:row]
 		} else { // in the middle need appending
@@ -324,12 +330,16 @@ func (e *Editor) backspace() {
 		}
 	} else { // somewhere in the middle
 		e.lines[row] = fmt.Sprintf("%s%s", line[:idx-1], line[idx:])
+		e.moveCursor(ARROW_LEFT)
 	}
-	e.moveCursor(ARROW_LEFT)
+
 }
 
 func (e *Editor) newLine() {
-	row, _ := e.getSliceCoords()
+	row, idx := e.getSliceCoords()
+	if row < 0 || idx < 0 {
+		return
+	}
 	newLines := append(e.lines[:row], "")
 	newLines = append(newLines, e.lines[row:]...)
 	e.lines = newLines
@@ -375,6 +385,10 @@ func (e *Editor) loadFile() {
 
 	if err := scanner.Err(); err != nil {
 		shutdown(fmt.Sprintf("error loading file %s: %s", e.config.fileName, err), 1)
+	}
+
+	if len(e.lines) == 0 {
+		e.lines = append(e.lines, "")
 	}
 
 }
