@@ -236,12 +236,12 @@ func (e *Editor) moveCursor(r rune) {
 			if e.state.col > len(e.lines[e.state.row]) {
 				e.state.col = len(e.lines[e.state.row])
 			}
-		}
-		if e.state.row <= e.state.offsetAnchor {
-			e.state.offsetAnchor--
-		}
-		if e.state.offset > 0 {
-			e.state.offset--
+			if e.state.offset > 0 {
+				e.state.offset--
+			}
+			if e.state.row < e.state.offsetAnchor {
+				e.state.offsetAnchor--
+			}
 		}
 	case ARROW_DOWN:
 		if e.state.row < len(e.lines)-1 {
@@ -250,13 +250,14 @@ func (e *Editor) moveCursor(r rune) {
 			if e.state.col > len(e.lines[e.state.row]) {
 				e.state.col = len(e.lines[e.state.row])
 			}
-		}
-		if e.state.row >= e.state.offset+e.state.numRow-1 {
-			e.state.offset++
-			if e.state.offset > e.state.offsetAnchor {
-				e.state.offsetAnchor = e.state.offset
+			if e.state.row >= e.state.numRow-1 {
+				e.state.offset++
+				if e.state.offset > e.state.offsetAnchor {
+					e.state.offsetAnchor = e.state.offset
+				}
 			}
 		}
+
 	case ARROW_LEFT:
 		if e.state.col > 0 {
 			e.state.col--
@@ -296,7 +297,14 @@ func (e *Editor) moveCursor(r rune) {
 func (e *Editor) makeFooter() string {
 	helpString := "save: Ctrl-S" + strings.Repeat(" ", 5) + "exit: Ctrl-Q"
 	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
-	editorState := fmt.Sprintf("[%d:%d] lines: %d", e.state.row+1, e.state.col+1, len(e.lines))
+	editorState := fmt.Sprintf(
+		"[%d:%d] [lines: %d] [off: %d, offA: %d]",
+		e.state.row+1,
+		e.state.col+1,
+		len(e.lines),
+		e.state.offset,
+		e.state.offsetAnchor,
+	)
 
 	leftPadding := (e.state.numCol-len(welcomeString))/2 - len(editorState)
 	rightPadding := (e.state.numCol-len(welcomeString))/2 - len(helpString)
@@ -312,7 +320,7 @@ func (e *Editor) drawRows(s string) string {
 		e.state.leftMargin = maxNumLen + 1
 	}
 
-	for idx := e.state.offset; idx < e.state.offset+e.state.numRow-1; idx++ {
+	for idx := e.state.offsetAnchor; idx < e.state.offsetAnchor+e.state.numRow-1; idx++ {
 		if idx < len(e.lines) {
 			if e.state.showNumbers {
 				num := fmt.Sprintf("%d", idx+1)
@@ -336,7 +344,7 @@ func (e *Editor) refreshScreen() {
 	ab = e.drawRows(ab)
 	ab += fmt.Sprintf(
 		"\x1b[%d;%dH",
-		min(e.state.row+e.state.topMargin+1, e.state.numRow-1),
+		e.state.row-e.state.offsetAnchor+e.state.topMargin+1,
 		e.state.col+e.state.leftMargin+1)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
