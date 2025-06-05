@@ -290,16 +290,17 @@ func (e *Editor) readKeyPresses() {
 	}
 }
 
-func (e *Editor) calculateRowOffsetUp() {
-	if e.state.row-e.state.maxRowOffset < 0 {
-		e.state.maxRowOffset--
+func (e *Editor) calculateRowOffset() {
+	for {
+		if e.state.row-e.state.maxRowOffset < 0 {
+			e.state.maxRowOffset--
+		} else if e.state.row-e.state.maxRowOffset >= e.state.numRow-e.state.botMargin {
+			e.state.maxRowOffset++
+		} else {
+			break
+		}
 	}
-}
 
-func (e *Editor) calculateRowOffsetDown() {
-	if e.state.row-e.state.maxRowOffset >= e.state.numRow-e.state.botMargin {
-		e.state.maxRowOffset++
-	}
 }
 
 func (e *Editor) colToRenderCol() int {
@@ -323,7 +324,6 @@ func (e *Editor) moveCursor(r rune) {
 			if e.state.col > len(e.lines[e.state.row].content) {
 				e.state.col = len(e.lines[e.state.row].content)
 			}
-			e.calculateRowOffsetUp()
 		}
 	case ARROW_DOWN:
 		if e.state.row < len(e.lines)-e.state.botMargin {
@@ -332,7 +332,6 @@ func (e *Editor) moveCursor(r rune) {
 			if e.state.col > len(e.lines[e.state.row].content) {
 				e.state.col = len(e.lines[e.state.row].content)
 			}
-			e.calculateRowOffsetDown()
 		}
 
 	case ARROW_LEFT:
@@ -341,7 +340,6 @@ func (e *Editor) moveCursor(r rune) {
 		} else if e.state.row > 0 {
 			e.state.row--
 			e.state.col = len(e.lines[e.state.row].content)
-			e.calculateRowOffsetUp()
 		}
 		e.state.anchor = e.state.col
 	case ARROW_RIGHT:
@@ -350,7 +348,6 @@ func (e *Editor) moveCursor(r rune) {
 		} else if e.state.row < len(e.lines)-e.state.botMargin {
 			e.state.row++
 			e.state.col = 0
-			e.calculateRowOffsetDown()
 		}
 		e.state.anchor = e.state.col
 	case PAGE_UP:
@@ -368,7 +365,6 @@ func (e *Editor) moveCursor(r rune) {
 	case NEW_LINE:
 		e.state.row++
 		e.state.col = 0
-		e.calculateRowOffsetDown()
 	}
 }
 
@@ -447,6 +443,7 @@ func (e *Editor) refreshScreen() {
 
 func (e *Editor) updateState() {
 	e.state.numCol, e.state.numRow = e.getWindowSize()
+	e.calculateRowOffset()
 	e.state.renderedRow = e.state.row - e.state.maxRowOffset + e.state.topMargin + 1
 	e.state.renderedCol = e.colToRenderCol() + e.state.leftMargin + 1
 }
