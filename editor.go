@@ -9,8 +9,6 @@ import (
 )
 
 const VERSION = "0.0.1"
-const LEFT_MARGIN = 3
-const TOP_MARGIN = 1
 const ESCAPE rune = '\x1b'
 const CSI byte = '['
 const CTRL_Q rune = '\x11'
@@ -23,7 +21,8 @@ const CURSOR_POSITION = "\x1b[6n"
 const HIDE_CURSOR = "\x1b[?25l"
 const SHOW_CURSOR = "\x1b[?25h"
 const INPUT_TIMEOUT = 100 * time.Millisecond
-const SHOW_NUMBERS = true
+const SHOW_NUMBERS = false
+const PAGE_STEP = 20
 
 const (
 	ARROW_UP    rune = 0xE000
@@ -39,16 +38,29 @@ const (
 type Editor struct {
 	reader    *bufio.Reader
 	config    EditorConfig
+	state     EditorState
 	inputChan chan (ReadResult)
+	lines     []string
 }
 
 type EditorConfig struct {
-	ncol         int
-	nrow         int
-	cr           int
-	cc           int
+	numCol       int
+	numRow       int
+	topMargin    int
+	leftMargin   int
+	botMargin    int
 	showNumbers  bool
 	inputTimeout time.Duration
+	fileName     string
+}
+
+type EditorState struct {
+	currentRow int
+	currentCol int
+}
+
+func NewEditorState(cursorRow int, cursorCol int) EditorState {
+	return EditorState{currentRow: cursorRow, currentCol: cursorCol}
 }
 
 type ReadResult struct {
@@ -56,77 +68,98 @@ type ReadResult struct {
 	err error
 }
 
-func NewEditorConfig(width int, height int) EditorConfig {
+func NewEditorConfig(width int, height int, fileName string) EditorConfig {
+	topMargin := 1
+	botMargin := 1
+	leftMargin := 1
 	return EditorConfig{
-		ncol:         width,
-		nrow:         height,
-		cr:           TOP_MARGIN,
-		cc:           LEFT_MARGIN,
+		numCol:       width,
+		numRow:       height,
+		topMargin:    topMargin,
+		leftMargin:   leftMargin,
+		botMargin:    botMargin,
 		showNumbers:  SHOW_NUMBERS,
 		inputTimeout: INPUT_TIMEOUT,
+		fileName:     fileName,
 	}
 }
 
 func NewEditor(r *os.File, config EditorConfig) *Editor {
+	initState := NewEditorState(config.topMargin, config.leftMargin)
 	return &Editor{
 		reader:    bufio.NewReader(r),
 		config:    config,
-		inputChan: make(chan ReadResult)}
+		state:     initState,
+		inputChan: make(chan ReadResult),
+		lines:     []string{},
+	}
 }
 
 func (e *Editor) moveCursor(r rune) {
+	cr := &e.state.currentRow
+	cc := &e.state.currentCol
 	switch r {
 	case ARROW_UP:
-		if e.config.cr > TOP_MARGIN {
-			e.config.cr--
+		if *cr > e.config.topMargin {
+			*cr--
+			if *cc > len(e.lines[*cr-e.config.topMargin]) {
+				*cc = len(e.lines[*cr-e.config.topMargin])
+			}
 		}
 	case ARROW_DOWN:
-		if e.config.cr < e.config.nrow {
-			e.config.cr++
+		if *cr < len(e.lines) {
+			*cr++
+			if *cc > len(e.lines[*cr-e.config.topMargin]) {
+				*cc = len(e.lines[*cr-e.config.topMargin])
+			}
 		}
 	case ARROW_LEFT:
-		if e.config.cc > LEFT_MARGIN {
-			e.config.cc--
-		} else if e.config.cr > TOP_MARGIN {
-			e.config.cr--
-			e.config.cc = e.config.ncol
+		if *cc > e.config.leftMargin {
+			*cc--
+		} else if *cr > e.config.topMargin {
+			*cr--
+			*cc = len(e.lines[*cr-e.config.topMargin])
 		}
 	case ARROW_RIGHT:
-		if e.config.cc < e.config.ncol {
-			e.config.cc++
-		} else if e.config.cr < e.config.nrow {
-			e.config.cr++
-			e.config.cc = LEFT_MARGIN
+		if *cc < len(e.lines[*cr-e.config.topMargin]) {
+			*cc++
+		} else if *cr < len(e.lines) {
+			*cr++
+			*cc = e.config.leftMargin
 		}
 	case PAGE_UP:
-		e.config.cr = TOP_MARGIN
+		for range PAGE_STEP {
+			e.moveCursor(ARROW_UP)
+		}
 	case PAGE_DOWN:
-		e.config.cr = e.config.nrow
+		for range PAGE_STEP {
+			e.moveCursor(ARROW_DOWN)
+		}
 	case HOME:
-		e.config.cc = LEFT_MARGIN
+		e.state.currentCol = e.config.leftMargin
 	case END:
-		e.config.cc = e.config.ncol
+		e.state.currentCol = e.config.numCol
 	}
 }
 
 func (e *Editor) drawRows(s string) string {
-	for i := range e.config.nrow {
-		if e.config.showNumbers {
-			s += fmt.Sprintf("%d", i+1)
-		} else {
-			s += "~"
-		}
-		if i == e.config.nrow/3 {
-			welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
-			padding := (e.config.ncol - len(welcomeString)) / 2
-			s += strings.Repeat(" ", padding) + welcomeString
-		}
-		s += CLEAR_RIGHT
-		if i != e.config.nrow-1 {
-			s += "\r\n"
-		}
+	// welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
+	// padding := (e.config.numCol - len(welcomeString)) / 2
+	// s += strings.Repeat(" ", padding) + welcomeString + CLEAR_RIGHT + "\r\n"
+
+	for _, line := range e.lines {
+		s += line + CLEAR_RIGHT + "\r\n"
 	}
+
+	for range e.config.numRow - len(e.lines) - e.config.botMargin - 1 {
+		s += "~" + CLEAR_RIGHT + "\r\n"
+	}
+
+	helpString := "press Ctrl-Q or z to exit"
+	padding := (e.config.numCol - len(helpString)) / 2
+	s += fmt.Sprintf("[%d:%d]", e.state.currentRow, e.state.currentCol) + strings.Repeat(" ", padding) + helpString + CLEAR_RIGHT
 	return s
+
 }
 
 func (e *Editor) refreshScreen() {
@@ -136,8 +169,8 @@ func (e *Editor) refreshScreen() {
 	ab = e.drawRows(ab)
 	ab += fmt.Sprintf(
 		"\x1b[%d;%dH",
-		e.config.cr,
-		e.config.cc)
+		e.state.currentRow,
+		e.state.currentCol)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
 }
@@ -224,6 +257,8 @@ func (e *Editor) processKeyPress(r rune) {
 }
 
 func (e *Editor) Start() {
+	e.loadFile()
+
 	go e.readKeyPresses()
 
 	for {
@@ -237,4 +272,41 @@ func (e *Editor) Start() {
 		}
 		e.refreshScreen()
 	}
+}
+
+func (e *Editor) loadFile() {
+	file, err := os.Open(e.config.fileName)
+	if err != nil {
+		shutdown(fmt.Sprintf("error opening file %s: %s", e.config.fileName, err), 1)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		e.lines = append(e.lines, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		shutdown(fmt.Sprintf("error loading file %s: %s", e.config.fileName, err), 1)
+	}
+
+}
+
+func (e *Editor) saveFile() {
+	file, err := os.OpenFile(e.config.fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		shutdown(fmt.Sprintf("error opening file %s: %s", e.config.fileName, err), 1)
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
+
+	for _, line := range e.lines {
+		_, err := writer.WriteString(fmt.Sprintf("%s\n", line))
+		if err != nil {
+			shutdown(fmt.Sprintf("error writing line %s: %s", line, err), 1)
+		}
+	}
+
 }

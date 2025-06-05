@@ -72,7 +72,9 @@ func main() {
 
 	ncol, nrow := getWindowSize()
 
-	editorConfig := NewEditorConfig(ncol, nrow)
+	fileName := "sample.txt"
+
+	editorConfig := NewEditorConfig(ncol, nrow, fileName)
 	editor := NewEditor(os.Stdin, editorConfig)
 	editor.Start()
 }

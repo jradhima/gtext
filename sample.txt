@@ -1,0 +1,4 @@
+this file contains sample text for the text editor
+second line
+third line
+final line and done for testing
