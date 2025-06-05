@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"golang.org/x/term"
 )
 
 // const and setup
@@ -46,13 +48,12 @@ const (
 
 type Editor struct {
 	reader    *bufio.Reader
-	config    EditorConfig
 	state     EditorState
 	inputChan chan (ReadResult)
 	lines     []string
 }
 
-type EditorConfig struct {
+type EditorState struct {
 	numCol       int
 	numRow       int
 	topMargin    int
@@ -61,12 +62,9 @@ type EditorConfig struct {
 	showNumbers  bool
 	inputTimeout time.Duration
 	fileName     string
-}
-
-type EditorState struct {
-	row    int
-	col    int
-	anchor int
+	row          int
+	col          int
+	anchor       int
 }
 
 type ReadResult struct {
@@ -74,14 +72,10 @@ type ReadResult struct {
 	err error
 }
 
-func NewEditorState(row int, col int) EditorState {
-	return EditorState{row: row, col: col, anchor: col}
-}
-
-func NewEditorConfig(width int, height int, showNumbers bool, fileName string) EditorConfig {
-	return EditorConfig{
-		numCol:       width,
-		numRow:       height,
+func NewEditorState(showNumbers bool, fileName string) EditorState {
+	return EditorState{
+		numCol:       1,
+		numRow:       1,
 		topMargin:    0,
 		leftMargin:   0,
 		botMargin:    1,
@@ -91,15 +85,67 @@ func NewEditorConfig(width int, height int, showNumbers bool, fileName string) E
 	}
 }
 
-func NewEditor(r *os.File, config EditorConfig) *Editor {
-	initState := NewEditorState(0, 0)
+func NewEditor(r *os.File, fileName string) *Editor {
+	initState := NewEditorState(true, fileName)
 	return &Editor{
 		reader:    bufio.NewReader(r),
-		config:    config,
 		state:     initState,
 		inputChan: make(chan ReadResult),
 		lines:     []string{},
 	}
+}
+
+func (e *Editor) shutdown(s string, code int) {
+	fmt.Print(CLEAR)
+	fmt.Print(TOP_LEFT)
+
+	fmt.Printf("Exiting: %s\r\n", s)
+	time.Sleep(250 * time.Millisecond)
+
+	fmt.Print(CLEAR)
+	fmt.Print(TOP_LEFT)
+	os.Exit(code)
+}
+
+func (e *Editor) getWindowSize() (int, int) {
+	ncol, nrow, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || (ncol == 0 && nrow == 0) {
+		return e.getWindowSizeFallback()
+	}
+	return ncol, nrow
+}
+
+func (e *Editor) getWindowSizeFallback() (int, int) {
+	size, err := fmt.Print(BOTTOM_RIGHT)
+	if err != nil {
+		e.shutdown(fmt.Sprintf("%s", err), 1)
+	} else if size != 12 {
+		e.shutdown("Window size escape sequence error", 1)
+	}
+	return e.getCursorPosition()
+}
+
+func (e *Editor) getCursorPosition() (int, int) {
+	size, err := fmt.Print(CURSOR_POSITION)
+	if err != nil {
+		e.shutdown(fmt.Sprintf("%s", err), 1)
+	} else if size != 4 {
+		e.shutdown("cursor position escape sequence error", 1)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	b, err := reader.ReadBytes('R')
+	if err != nil {
+		e.shutdown(fmt.Sprintf("%s", err), 1)
+	} else if b[0] != '\x1b' || b[1] != '[' {
+		e.shutdown("cursor position return not valid", 1)
+	}
+	var nrow, ncol int
+	_, err = fmt.Sscanf(fmt.Sprintf("%s", b[1:]), "[%d;%dR", &nrow, &ncol)
+	if err != nil {
+		e.shutdown(fmt.Sprintf("error parsing: %s", err), 1)
+	}
+	return nrow, ncol
 }
 
 // terminal functionality
@@ -237,22 +283,22 @@ func (e *Editor) makeFooter() string {
 	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
 	editorState := fmt.Sprintf("[%d:%d] lines: %d", e.state.row+1, e.state.col+1, len(e.lines))
 
-	leftPadding := (e.config.numCol-len(welcomeString))/2 - len(editorState)
-	rightPadding := (e.config.numCol-len(welcomeString))/2 - len(helpString)
+	leftPadding := (e.state.numCol-len(welcomeString))/2 - len(editorState)
+	rightPadding := (e.state.numCol-len(welcomeString))/2 - len(helpString)
 
-	s := editorState + strings.Repeat(" ", leftPadding) + welcomeString + strings.Repeat(" ", rightPadding) + helpString + CLEAR_RIGHT
+	s := editorState + strings.Repeat(" ", max(leftPadding, 0)) + welcomeString + strings.Repeat(" ", max(0, rightPadding)) + helpString + CLEAR_RIGHT
 	return s
 }
 
 func (e *Editor) drawRows(s string) string {
 	maxNumLen := 0
-	if e.config.showNumbers {
+	if e.state.showNumbers {
 		maxNumLen = len(fmt.Sprintf("%d", len(e.lines)-1))
-		e.config.leftMargin = maxNumLen + 1
+		e.state.leftMargin = maxNumLen + 1
 	}
 
 	for idx, line := range e.lines {
-		if e.config.showNumbers {
+		if e.state.showNumbers {
 			num := fmt.Sprintf("%d", idx)
 			s += strings.Repeat(" ", maxNumLen-len(num)) + num + " "
 		}
@@ -260,7 +306,7 @@ func (e *Editor) drawRows(s string) string {
 		s += line + CLEAR_RIGHT + "\r\n"
 	}
 
-	for range e.config.numRow - len(e.lines) - e.config.botMargin {
+	for range e.state.numRow - len(e.lines) - e.state.botMargin {
 		s += "~" + CLEAR_RIGHT + "\r\n"
 	}
 
@@ -271,14 +317,15 @@ func (e *Editor) drawRows(s string) string {
 }
 
 func (e *Editor) refreshScreen() {
+	e.state.numCol, e.state.numRow = e.getWindowSize()
 	ab := ""
 	ab += HIDE_CURSOR
 	ab += TOP_LEFT
 	ab = e.drawRows(ab)
 	ab += fmt.Sprintf(
 		"\x1b[%d;%dH",
-		e.state.row+e.config.topMargin+1,
-		e.state.col+e.config.leftMargin+1)
+		e.state.row+e.state.topMargin+1,
+		e.state.col+e.state.leftMargin+1)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
 }
@@ -288,7 +335,7 @@ func (e *Editor) refreshScreen() {
 func (e *Editor) processKeyPress(r rune) {
 	switch r {
 	case CTRL_Q:
-		shutdown("Ctrl+Q", 0)
+		e.shutdown("Ctrl+Q", 0)
 	case CTRL_S:
 		e.saveFile()
 	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
@@ -376,19 +423,19 @@ func (e *Editor) Start() {
 		select {
 		case res := <-e.inputChan:
 			if res.err != nil {
-				shutdown(fmt.Sprintf("%s", res.err), 1)
+				e.shutdown(fmt.Sprintf("%s", res.err), 1)
 			}
 			e.processKeyPress(res.r)
-		case <-time.After(e.config.inputTimeout):
+		case <-time.After(e.state.inputTimeout):
 		}
 		e.refreshScreen()
 	}
 }
 
 func (e *Editor) loadFile() {
-	file, err := os.OpenFile(e.config.fileName, os.O_RDONLY|os.O_CREATE, 0644)
+	file, err := os.OpenFile(e.state.fileName, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
-		shutdown(fmt.Sprintf("error opening/creating file %s: %s", e.config.fileName, err), 1)
+		e.shutdown(fmt.Sprintf("error opening/creating file %s: %s", e.state.fileName, err), 1)
 	}
 	defer file.Close()
 
@@ -398,7 +445,7 @@ func (e *Editor) loadFile() {
 	}
 
 	if err := scanner.Err(); err != nil {
-		shutdown(fmt.Sprintf("error loading file %s: %s", e.config.fileName, err), 1)
+		e.shutdown(fmt.Sprintf("error loading file %s: %s", e.state.fileName, err), 1)
 	}
 
 	if len(e.lines) == 0 {
@@ -408,9 +455,9 @@ func (e *Editor) loadFile() {
 }
 
 func (e *Editor) saveFile() {
-	file, err := os.OpenFile(e.config.fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(e.state.fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		shutdown(fmt.Sprintf("error opening file %s: %s", e.config.fileName, err), 1)
+		e.shutdown(fmt.Sprintf("error opening file %s: %s", e.state.fileName, err), 1)
 	}
 	defer file.Close()
 
@@ -420,7 +467,7 @@ func (e *Editor) saveFile() {
 	for _, line := range e.lines {
 		_, err := writer.WriteString(fmt.Sprintf("%s\n", line))
 		if err != nil {
-			shutdown(fmt.Sprintf("error writing line %s: %s", line, err), 1)
+			e.shutdown(fmt.Sprintf("error writing line %s: %s", line, err), 1)
 		}
 	}
 
