@@ -19,7 +19,7 @@ const CURSOR_POSITION = "\x1b[6n"
 const HIDE_CURSOR = "\x1b[?25l"
 const SHOW_CURSOR = "\x1b[?25h"
 const INPUT_TIMEOUT = 100 * time.Millisecond
-const SHOW_NUMBERS = false
+const SHOW_NUMBERS = true
 
 type Editor struct {
 	reader    *bufio.Reader
@@ -97,7 +97,6 @@ func (e *Editor) drawRows(s string) string {
 			s += "\r\n"
 		}
 	}
-	s += fmt.Sprintf("\r\ncr: %d, cc %d", e.config.cr, e.config.cc)
 	return s
 }
 
