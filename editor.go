@@ -34,7 +34,7 @@ const BLACK_ON_WHITE = "\x1b[30;47m"
 const RESET = "\x1b[0m"
 const INPUT_TIMEOUT = 100 * time.Millisecond
 const PAGE_STEP = 20
-const EXPAND_TABS = true
+const EXPAND_TABS = false
 const TAB_SIZE = 4
 
 const (
@@ -51,11 +51,16 @@ const (
 
 // structs and types
 
+type line struct {
+	content string
+	render  string
+}
+
 type Editor struct {
 	reader    *bufio.Reader
 	state     EditorState
 	inputChan chan (ReadResult)
-	lines     []string
+	lines     []line
 }
 
 type EditorState struct {
@@ -73,7 +78,9 @@ type EditorState struct {
 	maxRowOffset int
 	expandTabs   bool
 	tabSize      int
-	renderRow    int
+	renderedCol  int
+	renderedRow  int
+	colOffset    int
 }
 
 type ReadResult struct {
@@ -94,7 +101,7 @@ func NewEditorState(showNumbers bool, fileName string) EditorState {
 		maxRowOffset: 0,
 		expandTabs:   EXPAND_TABS,
 		tabSize:      TAB_SIZE,
-		renderRow:    0,
+		renderedCol:  0,
 	}
 }
 
@@ -104,7 +111,7 @@ func NewEditor(r *os.File, fileName string) *Editor {
 		reader:    bufio.NewReader(r),
 		state:     initState,
 		inputChan: make(chan ReadResult),
-		lines:     []string{},
+		lines:     []line{},
 	}
 }
 
@@ -255,8 +262,8 @@ func (e *Editor) moveCursor(r rune) {
 		if e.state.row > 0 {
 			e.state.row--
 			e.state.col = e.state.anchor
-			if e.state.col > len(e.lines[e.state.row]) {
-				e.state.col = len(e.lines[e.state.row])
+			if e.state.col > len(e.lines[e.state.row].content) {
+				e.state.col = len(e.lines[e.state.row].content)
 			}
 			e.calculateRowOffsetUp()
 		}
@@ -264,8 +271,8 @@ func (e *Editor) moveCursor(r rune) {
 		if e.state.row < len(e.lines)-e.state.botMargin {
 			e.state.row++
 			e.state.col = e.state.anchor
-			if e.state.col > len(e.lines[e.state.row]) {
-				e.state.col = len(e.lines[e.state.row])
+			if e.state.col > len(e.lines[e.state.row].content) {
+				e.state.col = len(e.lines[e.state.row].content)
 			}
 			e.calculateRowOffsetDown()
 		}
@@ -275,12 +282,12 @@ func (e *Editor) moveCursor(r rune) {
 			e.state.col--
 		} else if e.state.row > 0 {
 			e.state.row--
-			e.state.col = len(e.lines[e.state.row])
+			e.state.col = len(e.lines[e.state.row].content)
 			e.calculateRowOffsetUp()
 		}
 		e.state.anchor = e.state.col
 	case ARROW_RIGHT:
-		if e.state.col < len(e.lines[e.state.row]) {
+		if e.state.col < len(e.lines[e.state.row].content) {
 			e.state.col++
 		} else if e.state.row < len(e.lines)-e.state.botMargin {
 			e.state.row++
@@ -299,7 +306,7 @@ func (e *Editor) moveCursor(r rune) {
 	case HOME:
 		e.state.col = 0
 	case END:
-		e.state.col = len(e.lines[e.state.row])
+		e.state.col = len(e.lines[e.state.row].content)
 	case NEW_LINE:
 		e.state.row++
 		e.state.col = 0
@@ -341,7 +348,7 @@ func (e *Editor) drawRows(s string) string {
 				s += strings.Repeat(" ", maxNumLen-len(num)) + num + " "
 			}
 
-			s += e.lines[idx] + CLEAR_RIGHT + "\r\n"
+			s += e.lines[idx].render + CLEAR_RIGHT + "\r\n"
 		} else {
 			s += "~" + CLEAR_RIGHT + "\r\n"
 		}
@@ -351,17 +358,22 @@ func (e *Editor) drawRows(s string) string {
 }
 
 func (e *Editor) refreshScreen() {
-	e.state.numCol, e.state.numRow = e.getWindowSize()
 	ab := ""
 	ab += HIDE_CURSOR
 	ab += TOP_LEFT
 	ab = e.drawRows(ab)
 	ab += fmt.Sprintf(
 		"\x1b[%d;%dH",
-		e.state.row-e.state.maxRowOffset+e.state.topMargin+1,
-		e.state.col+e.state.leftMargin+1)
+		e.state.renderedRow,
+		e.state.renderedCol)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
+}
+
+func (e *Editor) updateState() {
+	e.state.numCol, e.state.numRow = e.getWindowSize()
+	e.state.renderedRow = e.state.row - e.state.maxRowOffset + e.state.topMargin + 1
+	e.state.renderedCol = e.state.col + e.state.leftMargin + 1
 }
 
 // text editing
@@ -385,6 +397,7 @@ func (e *Editor) processKeyPress(r rune) {
 			}
 		} else {
 			e.write(r)
+			e.state.renderedCol += e.state.tabSize - 1
 		}
 	default:
 		if unicode.IsPrint(r) {
@@ -398,15 +411,15 @@ func (e *Editor) write(r rune) {
 	if row < 0 || idx < 0 {
 		return
 	}
-	line := e.lines[row]
-	if line == "" {
-		e.lines[row] = fmt.Sprintf("%c", r)
+	l := e.lines[row]
+	if l.content == "" {
+		e.lines[row].content = fmt.Sprintf("%c", r)
 	} else if idx == 0 {
-		e.lines[row] = fmt.Sprintf("%c%s", r, line)
-	} else if idx == len(line)+1 {
-		e.lines[row] = fmt.Sprintf("%s%c", line, r)
+		e.lines[row].content = fmt.Sprintf("%c%s", r, l.content)
+	} else if idx == len(l.content)+1 {
+		e.lines[row].content = fmt.Sprintf("%s%c", l.content, r)
 	} else {
-		e.lines[row] = fmt.Sprintf("%s%c%s", line[:idx], r, line[idx:])
+		e.lines[row].content = fmt.Sprintf("%s%c%s", l.content[:idx], r, l.content[idx:])
 	}
 	e.moveCursor(ARROW_RIGHT)
 }
@@ -416,21 +429,21 @@ func (e *Editor) backspace() {
 	if row < 0 || idx < 0 || len(e.lines) == 0 {
 		return
 	}
-	line := e.lines[row]
+	l := e.lines[row]
 	if idx == 0 { //case first position
 		if row == 0 { // top row do nothing
 			return
 		}
 		e.moveCursor(ARROW_LEFT)
 		if row == len(e.lines)-1 { // last row simple operation
-			e.lines[row-1] = fmt.Sprintf("%s%s", e.lines[row-1], line)
+			e.lines[row-1].content = fmt.Sprintf("%s%s", e.lines[row-1].content, l.content)
 			e.lines = e.lines[:row]
 		} else { // in the middle need appending
-			e.lines[row-1] = fmt.Sprintf("%s%s", e.lines[row-1], line)
+			e.lines[row-1].content = fmt.Sprintf("%s%s", e.lines[row-1].content, l.content)
 			e.lines = append(e.lines[:row], e.lines[row+1:]...)
 		}
 	} else { // somewhere in the middle
-		e.lines[row] = fmt.Sprintf("%s%s", line[:idx-1], line[idx:])
+		e.lines[row].content = fmt.Sprintf("%s%s", l.content[:idx-1], l.content[idx:])
 		e.moveCursor(ARROW_LEFT)
 	}
 
@@ -441,11 +454,11 @@ func (e *Editor) newLine() {
 	if row < 0 || idx < 0 {
 		return
 	}
-	line := e.lines[row]
-	lineBefore := line[:idx]
-	lineAfter := line[idx:]
+	l := e.lines[row]
+	lineBefore := line{l.content[:idx], e.render(l.content[:idx])}
+	lineAfter := line{l.content[idx:], e.render(l.content[idx:])}
 
-	newLines := make([]string, 0, len(e.lines)+1)
+	newLines := make([]line, 0, len(e.lines)+1)
 	newLines = append(newLines, e.lines[:row]...)
 	newLines = append(newLines, lineBefore)
 	newLines = append(newLines, lineAfter)
@@ -470,8 +483,25 @@ func (e *Editor) Start() {
 			e.processKeyPress(res.r)
 		case <-time.After(e.state.inputTimeout):
 		}
+		e.updateState()
 		e.refreshScreen()
 	}
+}
+
+func (e *Editor) render(s string) string {
+	c := ""
+	col := 0
+	for _, r := range s {
+		if r == TAB {
+			n := e.state.tabSize - (col % e.state.tabSize)
+			c += strings.Repeat(" ", n)
+			col += n
+		} else {
+			c += string(r)
+			col++
+		}
+	}
+	return c
 }
 
 func (e *Editor) loadFile() {
@@ -483,7 +513,8 @@ func (e *Editor) loadFile() {
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		e.lines = append(e.lines, scanner.Text())
+		l := scanner.Text()
+		e.lines = append(e.lines, line{l, e.render(l)})
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -491,7 +522,7 @@ func (e *Editor) loadFile() {
 	}
 
 	if len(e.lines) == 0 {
-		e.lines = append(e.lines, "")
+		e.lines = append(e.lines, line{"", ""})
 	}
 }
 
@@ -505,10 +536,10 @@ func (e *Editor) saveFile() {
 	writer := bufio.NewWriter(file)
 	defer writer.Flush()
 
-	for _, line := range e.lines {
-		_, err := writer.WriteString(fmt.Sprintf("%s\n", line))
+	for _, l := range e.lines {
+		_, err := writer.WriteString(fmt.Sprintf("%s\n", l.content))
 		if err != nil {
-			e.shutdown(fmt.Sprintf("error writing line %s: %s", line, err), 1)
+			e.shutdown(fmt.Sprintf("error writing line %s: %s", l.content, err), 1)
 		}
 	}
 
