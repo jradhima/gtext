@@ -257,6 +257,18 @@ func (e *Editor) calculateRowOffsetDown() {
 	}
 }
 
+func (e *Editor) colToRenderCol() int {
+	rCol := 0
+	l := e.lines[e.state.row]
+	for i := range e.state.col {
+		if rune(l.content[i]) == TAB {
+			rCol += (e.state.tabSize - 1) - (rCol % e.state.tabSize)
+		}
+		rCol++
+	}
+	return rCol
+}
+
 func (e *Editor) moveCursor(r rune) {
 	switch r {
 	case ARROW_UP:
@@ -374,7 +386,7 @@ func (e *Editor) refreshScreen() {
 func (e *Editor) updateState() {
 	e.state.numCol, e.state.numRow = e.getWindowSize()
 	e.state.renderedRow = e.state.row - e.state.maxRowOffset + e.state.topMargin + 1
-	e.state.renderedCol = e.state.col + e.state.leftMargin + 1
+	e.state.renderedCol = e.colToRenderCol() + e.state.leftMargin + 1
 }
 
 // text editing
