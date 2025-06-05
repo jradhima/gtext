@@ -39,6 +39,7 @@ const (
 	PAGE_DOWN   rune = 0xE005
 	HOME        rune = 0xE006
 	END         rune = 0xE007
+	NEW_LINE    rune = 0xE008
 )
 
 // structs and types
@@ -155,7 +156,7 @@ func (e *Editor) readKeyPresses() {
 					if b2 == '~' {
 						e.inputChan <- ReadResult{r: PAGE_DOWN, err: err}
 					}
-				case '1', '7', 'H':
+				case '1', '7':
 					b2, _, err := e.reader.ReadRune()
 					if err != nil {
 						e.inputChan <- ReadResult{r: ESCAPE, err: err}
@@ -163,7 +164,9 @@ func (e *Editor) readKeyPresses() {
 					if b2 == '~' {
 						e.inputChan <- ReadResult{r: HOME, err: err}
 					}
-				case '4', '8', 'F':
+				case 'H':
+					e.inputChan <- ReadResult{r: HOME, err: err}
+				case '4', '8':
 					b2, _, err := e.reader.ReadRune()
 					if err != nil {
 						e.inputChan <- ReadResult{r: ESCAPE, err: err}
@@ -171,6 +174,8 @@ func (e *Editor) readKeyPresses() {
 					if b2 == '~' {
 						e.inputChan <- ReadResult{r: END, err: err}
 					}
+				case 'F':
+					e.inputChan <- ReadResult{r: END, err: err}
 
 				}
 
@@ -225,7 +230,11 @@ func (e *Editor) moveCursor(r rune) {
 	case HOME:
 		e.state.col = e.config.leftMargin
 	case END:
-		e.state.col = e.config.numCol
+		row, _ := e.getSliceCoords()
+		e.state.col = len(e.lines[row]) + 1
+	case NEW_LINE:
+		e.state.row++
+		e.state.col = e.config.leftMargin
 	}
 }
 
@@ -340,16 +349,18 @@ func (e *Editor) newLine() {
 	if row < 0 || idx < 0 {
 		return
 	}
-	newLines := append(e.lines[:row], "")
-	newLines = append(newLines, e.lines[row:]...)
-	e.lines = newLines
-	// currentIndex := e.state.col - 1
-	// line := e.lines[currentLine]
-	// if line == "" {
+	line := e.lines[row]
+	lineBefore := line[:idx]
+	lineAfter := line[idx:]
 
-	// }
-	// e.lines[currentLine] = fmt.Sprintf("%s%c%s", line[:currentIndex], r, line[currentIndex:])
-	// e.moveCursor(ARROW_RIGHT)
+	newLines := make([]string, 0, len(e.lines)+1)
+	newLines = append(newLines, e.lines[:row]...)
+	newLines = append(newLines, lineBefore)
+	newLines = append(newLines, lineAfter)
+	newLines = append(newLines, e.lines[row+1:]...)
+
+	e.lines = newLines
+	e.moveCursor(NEW_LINE)
 }
 
 // higher level functionality
