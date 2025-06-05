@@ -1,4 +1,4 @@
-module gtext
+module github.com/jradhima/gtext
 
 go 1.23.0
 
