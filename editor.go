@@ -180,40 +180,39 @@ func (e *Editor) readKeyPresses() {
 		r, _, err := e.reader.ReadRune()
 		if err != nil {
 			e.inputChan <- ReadResult{r: ESCAPE, err: err}
+			continue
 		}
-		if r == CTRL_F {
-			e.state.search = true
-		}
+
 		if r == ESCAPE {
 			b, err := e.reader.Peek(1)
-			if err != nil {
+			if err != nil || len(b) == 0 {
 				e.inputChan <- ReadResult{r: ESCAPE, err: err}
+				continue
 			}
-			if len(b) == 1 && b[0] == byte(CSI) {
-				_, _, err := e.reader.ReadRune()
-				if err != nil {
-					e.inputChan <- ReadResult{r: ESCAPE, err: err}
-				}
+
+			if b[0] == byte(CSI) {
+				e.reader.ReadRune()
 				b1, _, err := e.reader.ReadRune()
 				if err != nil {
 					e.inputChan <- ReadResult{r: ESCAPE, err: err}
+					continue
 				}
 				switch b1 {
 				case 'A':
-					e.inputChan <- ReadResult{r: ARROW_UP, err: err}
+					e.inputChan <- ReadResult{r: ARROW_UP, err: nil}
 				case 'B':
-					e.inputChan <- ReadResult{r: ARROW_DOWN, err: err}
+					e.inputChan <- ReadResult{r: ARROW_DOWN, err: nil}
 				case 'C':
-					e.inputChan <- ReadResult{r: ARROW_RIGHT, err: err}
+					e.inputChan <- ReadResult{r: ARROW_RIGHT, err: nil}
 				case 'D':
-					e.inputChan <- ReadResult{r: ARROW_LEFT, err: err}
+					e.inputChan <- ReadResult{r: ARROW_LEFT, err: nil}
 				case '5':
 					b2, _, err := e.reader.ReadRune()
 					if err != nil {
 						e.inputChan <- ReadResult{r: ESCAPE, err: err}
 					}
 					if b2 == '~' {
-						e.inputChan <- ReadResult{r: PAGE_UP, err: err}
+						e.inputChan <- ReadResult{r: PAGE_UP, err: nil}
 					}
 				case '6':
 					b2, _, err := e.reader.ReadRune()
@@ -221,7 +220,7 @@ func (e *Editor) readKeyPresses() {
 						e.inputChan <- ReadResult{r: ESCAPE, err: err}
 					}
 					if b2 == '~' {
-						e.inputChan <- ReadResult{r: PAGE_DOWN, err: err}
+						e.inputChan <- ReadResult{r: PAGE_DOWN, err: nil}
 					}
 				case '1', '7':
 					b2, _, err := e.reader.ReadRune()
@@ -229,7 +228,7 @@ func (e *Editor) readKeyPresses() {
 						e.inputChan <- ReadResult{r: ESCAPE, err: err}
 					}
 					if b2 == '~' {
-						e.inputChan <- ReadResult{r: HOME, err: err}
+						e.inputChan <- ReadResult{r: HOME, err: nil}
 					}
 				case 'H':
 					e.inputChan <- ReadResult{r: HOME, err: err}
@@ -239,13 +238,13 @@ func (e *Editor) readKeyPresses() {
 						e.inputChan <- ReadResult{r: ESCAPE, err: err}
 					}
 					if b2 == '~' {
-						e.inputChan <- ReadResult{r: END, err: err}
+						e.inputChan <- ReadResult{r: END, err: nil}
 					}
 				case 'F':
 					e.inputChan <- ReadResult{r: END, err: err}
 
 				}
-
+				continue
 			}
 		}
 		e.inputChan <- ReadResult{r: r, err: err}
@@ -348,7 +347,7 @@ func (e *Editor) makeFooter() string {
 	s := BLACK_ON_WHITE
 	if e.state.search {
 		searchStringDisplay := fmt.Sprintf("[find: %s]", e.state.searchString)
-		s += "Exit: Return | " + searchStringDisplay
+		s += "Exit: Ctrl-F | Search: Return | " + searchStringDisplay
 	} else {
 		s += "Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F"
 	}
@@ -426,6 +425,9 @@ func (e *Editor) processKeyPress(r rune) {
 		switch r {
 		case CTRL_Q:
 			e.shutdown("Ctrl+Q", 0)
+		case CTRL_F:
+			e.state.search = false
+			e.state.searchString = ""
 		case BACKSPACE, DELETE:
 			if len(e.state.searchString) > 0 {
 				e.state.searchString = e.state.searchString[:len(e.state.searchString)-1]
@@ -445,6 +447,8 @@ func (e *Editor) processKeyPress(r rune) {
 		case CTRL_S:
 			e.saveFile()
 			e.state.dirty = false
+		case CTRL_F:
+			e.state.search = true
 		case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 			e.moveCursor(r)
 		case BACKSPACE, DELETE:
@@ -615,5 +619,5 @@ func (e *Editor) saveFile() {
 	if err != nil {
 		e.shutdown(fmt.Sprintf("error writing file: %s", err), 1)
 	}
-	e.state.writeStatus = fmt.Sprintf("Wrote %d bytes to disc", len(s))
+	e.state.writeStatus = fmt.Sprintf("%d bytes written to disc", len(s))
 }
