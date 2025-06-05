@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -397,7 +398,6 @@ func (e *Editor) processKeyPress(r rune) {
 			}
 		} else {
 			e.write(r)
-			e.state.renderedCol += e.state.tabSize - 1
 		}
 	default:
 		if unicode.IsPrint(r) {
@@ -411,6 +411,7 @@ func (e *Editor) write(r rune) {
 	if row < 0 || idx < 0 {
 		return
 	}
+
 	l := e.lines[row]
 	if l.content == "" {
 		e.lines[row].content = fmt.Sprintf("%c", r)
@@ -421,6 +422,8 @@ func (e *Editor) write(r rune) {
 	} else {
 		e.lines[row].content = fmt.Sprintf("%s%c%s", l.content[:idx], r, l.content[idx:])
 	}
+
+	e.lines[row].render = e.render(e.lines[row].content)
 	e.moveCursor(ARROW_RIGHT)
 }
 
@@ -434,19 +437,22 @@ func (e *Editor) backspace() {
 		if row == 0 { // top row do nothing
 			return
 		}
-		e.moveCursor(ARROW_LEFT)
+		e.moveCursor(ARROW_LEFT)   // here because cursor must move first
 		if row == len(e.lines)-1 { // last row simple operation
 			e.lines[row-1].content = fmt.Sprintf("%s%s", e.lines[row-1].content, l.content)
 			e.lines = e.lines[:row]
 		} else { // in the middle need appending
 			e.lines[row-1].content = fmt.Sprintf("%s%s", e.lines[row-1].content, l.content)
-			e.lines = append(e.lines[:row], e.lines[row+1:]...)
+			e.lines = slices.Delete(e.lines, row, row+1) //append(e.lines[:row], e.lines[row+1:]...)
 		}
+
+		row = row - 1 // row to re-render after
 	} else { // somewhere in the middle
 		e.lines[row].content = fmt.Sprintf("%s%s", l.content[:idx-1], l.content[idx:])
 		e.moveCursor(ARROW_LEFT)
 	}
 
+	e.lines[row].render = e.render(e.lines[row].content)
 }
 
 func (e *Editor) newLine() {
@@ -458,13 +464,8 @@ func (e *Editor) newLine() {
 	lineBefore := line{l.content[:idx], e.render(l.content[:idx])}
 	lineAfter := line{l.content[idx:], e.render(l.content[idx:])}
 
-	newLines := make([]line, 0, len(e.lines)+1)
-	newLines = append(newLines, e.lines[:row]...)
-	newLines = append(newLines, lineBefore)
-	newLines = append(newLines, lineAfter)
-	newLines = append(newLines, e.lines[row+1:]...)
-
-	e.lines = newLines
+	e.lines[row] = lineBefore
+	e.lines = slices.Insert(e.lines, row+1, lineAfter)
 	e.moveCursor(NEW_LINE)
 }
 
