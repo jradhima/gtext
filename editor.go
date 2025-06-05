@@ -65,7 +65,6 @@ type EditorState struct {
 	row          int
 	col          int
 	anchor       int
-	rowOffset    int
 	maxRowOffset int
 }
 
@@ -84,7 +83,7 @@ func NewEditorState(showNumbers bool, fileName string) EditorState {
 		showNumbers:  showNumbers,
 		inputTimeout: INPUT_TIMEOUT,
 		fileName:     fileName,
-		rowOffset:    0,
+		maxRowOffset: 0,
 	}
 }
 
@@ -228,20 +227,14 @@ func (e *Editor) readKeyPresses() {
 }
 
 func (e *Editor) calculateRowOffsetUp() {
-	if e.state.rowOffset > 0 {
-		e.state.rowOffset--
-	}
-	if e.state.row < e.state.maxRowOffset {
+	if e.state.row-e.state.maxRowOffset < 0 {
 		e.state.maxRowOffset--
 	}
 }
 
 func (e *Editor) calculateRowOffsetDown() {
-	if e.state.row >= e.state.numRow-1 {
-		e.state.rowOffset++
-		if e.state.rowOffset > e.state.maxRowOffset {
-			e.state.maxRowOffset = e.state.rowOffset
-		}
+	if e.state.row-e.state.maxRowOffset >= e.state.numRow-1 {
+		e.state.maxRowOffset++
 	}
 }
 
@@ -309,11 +302,10 @@ func (e *Editor) makeFooter() string {
 	helpString := "save: Ctrl-S" + strings.Repeat(" ", 5) + "exit: Ctrl-Q"
 	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
 	editorState := fmt.Sprintf(
-		"[%d:%d] [lines: %d] [off: %d, offA: %d]",
+		"[%d:%d] [lines: %d] [off: %d]",
 		e.state.row+1,
 		e.state.col+1,
 		len(e.lines),
-		e.state.rowOffset,
 		e.state.maxRowOffset,
 	)
 
