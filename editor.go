@@ -9,6 +9,7 @@ import (
 )
 
 const VERSION = "0.0.1"
+const ESCAPE = '\x1b'
 const CTRL_Q rune = '\x11'
 const SPACE rune = '\x20'
 const CLEAR = "\x1b[2J"
@@ -116,10 +117,32 @@ func (e *Editor) refreshScreen() {
 func (e *Editor) readKeyPresses() {
 	for {
 		r, _, err := e.reader.ReadRune()
-		e.inputChan <- ReadResult{r: r, err: err}
 		if err != nil {
-			return
+			e.inputChan <- ReadResult{r: ESCAPE, err: err}
 		}
+		if r == ESCAPE {
+			b1, err := e.reader.ReadByte()
+			if err != nil {
+				e.inputChan <- ReadResult{r: ESCAPE, err: err}
+			}
+			b2, err := e.reader.ReadByte()
+			if err != nil {
+				e.inputChan <- ReadResult{r: ESCAPE, err: err}
+			}
+			if b1 == '[' {
+				switch b2 {
+				case 'A':
+					e.inputChan <- ReadResult{r: 'w', err: err}
+				case 'B':
+					e.inputChan <- ReadResult{r: 's', err: err}
+				case 'C':
+					e.inputChan <- ReadResult{r: 'd', err: err}
+				case 'D':
+					e.inputChan <- ReadResult{r: 'a', err: err}
+				}
+			}
+		}
+		e.inputChan <- ReadResult{r: r, err: err}
 	}
 }
 
