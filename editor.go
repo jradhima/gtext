@@ -15,6 +15,7 @@ const VERSION = "0.0.1"
 const ESCAPE rune = '\x1b'
 const CSI byte = '['
 const CTRL_Q rune = '\x11'
+const CTRL_S rune = '\x13'
 const SPACE rune = '\x20'
 const BACKSPACE rune = '\x08'
 const DELETE rune = 127
@@ -246,7 +247,7 @@ func (e *Editor) moveCursor(r rune) {
 // rendering
 
 func (e *Editor) makeFooter() string {
-	helpString := "exit: Ctrl-Q or z"
+	helpString := "save: Ctrl-S" + strings.Repeat(" ", 5) + "exit: Ctrl-Q"
 	welcomeString := fmt.Sprintf("gtext editor -- version %s", VERSION)
 	editorState := fmt.Sprintf("[%d:%d] lines: %d", e.state.row, e.state.col, len(e.lines))
 
@@ -291,8 +292,8 @@ func (e *Editor) processKeyPress(r rune) {
 	switch r {
 	case CTRL_Q:
 		shutdown("Ctrl+Q", 0)
-	case 'z':
-		shutdown("z", 0)
+	case CTRL_S:
+		e.saveFile()
 	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 		e.moveCursor(r)
 	case BACKSPACE, DELETE:
