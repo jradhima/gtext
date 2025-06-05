@@ -65,8 +65,8 @@ type EditorState struct {
 	row          int
 	col          int
 	anchor       int
-	offset       int
-	maxOffset    int
+	rowOffset    int
+	maxRowOffset int
 }
 
 type ReadResult struct {
@@ -84,7 +84,7 @@ func NewEditorState(showNumbers bool, fileName string) EditorState {
 		showNumbers:  showNumbers,
 		inputTimeout: INPUT_TIMEOUT,
 		fileName:     fileName,
-		offset:       0,
+		rowOffset:    0,
 	}
 }
 
@@ -227,20 +227,20 @@ func (e *Editor) readKeyPresses() {
 	}
 }
 
-func (e *Editor) calculateOffsetUp() {
-	if e.state.offset > 0 {
-		e.state.offset--
+func (e *Editor) calculateRowOffsetUp() {
+	if e.state.rowOffset > 0 {
+		e.state.rowOffset--
 	}
-	if e.state.row < e.state.maxOffset {
-		e.state.maxOffset--
+	if e.state.row < e.state.maxRowOffset {
+		e.state.maxRowOffset--
 	}
 }
 
-func (e *Editor) calculateOffsetDown() {
+func (e *Editor) calculateRowOffsetDown() {
 	if e.state.row >= e.state.numRow-1 {
-		e.state.offset++
-		if e.state.offset > e.state.maxOffset {
-			e.state.maxOffset = e.state.offset
+		e.state.rowOffset++
+		if e.state.rowOffset > e.state.maxRowOffset {
+			e.state.maxRowOffset = e.state.rowOffset
 		}
 	}
 }
@@ -254,7 +254,7 @@ func (e *Editor) moveCursor(r rune) {
 			if e.state.col > len(e.lines[e.state.row]) {
 				e.state.col = len(e.lines[e.state.row])
 			}
-			e.calculateOffsetUp()
+			e.calculateRowOffsetUp()
 		}
 	case ARROW_DOWN:
 		if e.state.row < len(e.lines)-1 {
@@ -263,7 +263,7 @@ func (e *Editor) moveCursor(r rune) {
 			if e.state.col > len(e.lines[e.state.row]) {
 				e.state.col = len(e.lines[e.state.row])
 			}
-			e.calculateOffsetDown()
+			e.calculateRowOffsetDown()
 		}
 
 	case ARROW_LEFT:
@@ -272,7 +272,7 @@ func (e *Editor) moveCursor(r rune) {
 		} else if e.state.row > 0 {
 			e.state.row--
 			e.state.col = len(e.lines[e.state.row])
-			e.calculateOffsetUp()
+			e.calculateRowOffsetUp()
 		}
 		e.state.anchor = e.state.col
 	case ARROW_RIGHT:
@@ -281,7 +281,7 @@ func (e *Editor) moveCursor(r rune) {
 		} else if e.state.row < len(e.lines)-1 {
 			e.state.row++
 			e.state.col = 0
-			e.calculateOffsetDown()
+			e.calculateRowOffsetDown()
 		}
 		e.state.anchor = e.state.col
 	case PAGE_UP:
@@ -299,7 +299,7 @@ func (e *Editor) moveCursor(r rune) {
 	case NEW_LINE:
 		e.state.row++
 		e.state.col = 0
-		e.calculateOffsetDown()
+		e.calculateRowOffsetDown()
 	}
 }
 
@@ -313,8 +313,8 @@ func (e *Editor) makeFooter() string {
 		e.state.row+1,
 		e.state.col+1,
 		len(e.lines),
-		e.state.offset,
-		e.state.maxOffset,
+		e.state.rowOffset,
+		e.state.maxRowOffset,
 	)
 
 	leftPadding := (e.state.numCol-len(welcomeString))/2 - len(editorState)
@@ -331,7 +331,7 @@ func (e *Editor) drawRows(s string) string {
 		e.state.leftMargin = maxNumLen + 1
 	}
 
-	for idx := e.state.maxOffset; idx < e.state.maxOffset+e.state.numRow-1; idx++ {
+	for idx := e.state.maxRowOffset; idx < e.state.maxRowOffset+e.state.numRow-1; idx++ {
 		if idx < len(e.lines) {
 			if e.state.showNumbers {
 				num := fmt.Sprintf("%d", idx+1)
@@ -355,7 +355,7 @@ func (e *Editor) refreshScreen() {
 	ab = e.drawRows(ab)
 	ab += fmt.Sprintf(
 		"\x1b[%d;%dH",
-		e.state.row-e.state.maxOffset+e.state.topMargin+1,
+		e.state.row-e.state.maxRowOffset+e.state.topMargin+1,
 		e.state.col+e.state.leftMargin+1)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
