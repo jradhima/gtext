@@ -507,8 +507,8 @@ func (e *Editor) processKeyPress(r rune) {
 		}
 	case false:
 		switch r {
-		case CTRL_Q:
-			e.shutdown("Ctrl+Q", 0)
+		// case CTRL_Q:
+		// 	e.shutdown("Ctrl+Q", 0)
 		case CTRL_S:
 			e.saveFile()
 			e.state.dirty = false
@@ -628,18 +628,20 @@ func (e *Editor) find() {
 	e.state.findMatches = indices
 }
 
-func (e *Editor) Start() {
+func (e *Editor) Start() (string, int) {
 	e.loadFile()
-
 	go e.readKeyPresses()
 
 	for {
 		select {
 		case res := <-e.inputChan:
 			if res.err != nil {
-				e.shutdown(fmt.Sprintf("%s", res.err), 1)
+				return fmt.Sprintf("%s", res.err), 1
+			} else if res.r == CTRL_Q {
+				return fmt.Sprintf("Ctrl-Q"), 0
+			} else {
+				e.processKeyPress(res.r)
 			}
-			e.processKeyPress(res.r)
 		case <-time.After(e.state.inputTimeout):
 		}
 		e.updateState()
@@ -685,10 +687,10 @@ func (e *Editor) loadFile() {
 	}
 }
 
-func (e *Editor) saveFile() {
+func (e *Editor) saveFile() (string, int) {
 	file, err := os.OpenFile(e.state.fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		e.shutdown(fmt.Sprintf("error opening file %s: %s", e.state.fileName, err), 1)
+		return fmt.Sprintf("error opening file %s: %s", e.state.fileName, err), 1
 	}
 	defer file.Close()
 
@@ -701,7 +703,8 @@ func (e *Editor) saveFile() {
 	}
 	_, err = writer.WriteString(s)
 	if err != nil {
-		e.shutdown(fmt.Sprintf("error writing file: %s", err), 1)
+		return fmt.Sprintf("error writing file: %s", err), 1
 	}
 	e.state.writeStatus = fmt.Sprintf("%d bytes written to disc", len(s))
+	return e.state.writeStatus, 0
 }
