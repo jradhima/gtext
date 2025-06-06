@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const CONFIGFILE string = ".gtext.conf"
+
 type Config struct {
 	ShowLineNumbers bool
 	ExpandTabs      bool
@@ -27,7 +29,7 @@ func LoadConfig() Config {
 		return cfg
 	}
 
-	file, err := os.Open(filepath.Join(home, ".gtext.conf"))
+	file, err := os.Open(filepath.Join(home, CONFIGFILE))
 
 	if err != nil {
 		return cfg
@@ -86,7 +88,7 @@ func InitConfig() {
 		os.Exit(1)
 	}
 
-	configPath := filepath.Join(home, ".gtext.conf")
+	configPath := filepath.Join(home, CONFIGFILE)
 
 	showLineNumbers := promptUser("Show line numbers (true/false)", "true")
 	expandTabs := promptUser("Expand tabs to spaces (true/false)", "false")
