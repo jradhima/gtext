@@ -144,25 +144,26 @@ type ReadResult struct {
 	err error
 }
 
-func NewEditorState(showNumbers bool, fileName string) EditorState {
+func NewEditorState(cfg Config, fileName string) EditorState {
 	return EditorState{
 		numCol:       1,
 		numRow:       1,
 		topMargin:    0,
 		leftMargin:   0,
 		botMargin:    2,
-		showNumbers:  showNumbers,
+		showNumbers:  cfg.ShowLineNumbers,
 		inputTimeout: INPUT_TIMEOUT,
 		fileName:     fileName,
 		maxRowOffset: 0,
-		expandTabs:   EXPAND_TABS,
-		tabSize:      TAB_SIZE,
+		expandTabs:   cfg.ExpandTabs,
+		tabSize:      cfg.TabSize,
 		renderedCol:  0,
 	}
 }
 
 func NewEditor(r *os.File, fileName string) *Editor {
-	initState := NewEditorState(true, fileName)
+	cfg := LoadConfig()
+	initState := NewEditorState(cfg, fileName)
 	return &Editor{
 		reader:    bufio.NewReader(r),
 		state:     initState,

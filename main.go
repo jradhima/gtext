@@ -26,11 +26,23 @@ func runEditor() int {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Println("usage: gtext <filename>")
+	args := os.Args
+
+	if len(args) == 2 {
+		switch args[1] {
+		case "config":
+			InitConfig()
+			return
+		case "help":
+			fmt.Println("usage: gtext <filename> or gtext init")
+			return
+		default:
+			exitCode := runEditor()
+			os.Exit(exitCode)
+		}
+	} else {
+		fmt.Println("usage: gtext <filename> or gtext init")
 		os.Exit(1)
 	}
 
-	exitCode := runEditor()
-	os.Exit(exitCode)
 }
