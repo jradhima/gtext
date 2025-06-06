@@ -20,6 +20,9 @@ const CSI rune = '\x5b'
 const CTRL_Q rune = '\x11'
 const CTRL_S rune = '\x13'
 const CTRL_F rune = '\x06'
+const CTRL_X rune = '\x18'
+const CTRL_C rune = '\x03'
+const CTRL_V rune = '\x16'
 const SPACE rune = '\x20'
 const BACKSPACE rune = '\x08'
 const TAB rune = '\x09'
@@ -133,6 +136,7 @@ type EditorState struct {
 	findString   string
 	writeStatus  string
 	findMatches  FindPositions
+	buffer       line
 }
 
 type ReadResult struct {
@@ -396,7 +400,7 @@ func (e *Editor) makeFooter() string {
 			s += fmt.Sprintf(" [match: %d/%d]", e.state.findMatches.current+1, n)
 		}
 	} else {
-		s += "Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F"
+		s += "Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F | Cut: Ctrl-X | Copy: Ctrl-C | Paste: Ctrl-V"
 	}
 	s += CLEAR_RIGHT + RESET + "\r\n"
 
@@ -512,6 +516,12 @@ func (e *Editor) processKeyPress(r rune) {
 		case CTRL_S:
 			e.saveFile()
 			e.state.dirty = false
+		case CTRL_X:
+			e.cutLine()
+		case CTRL_C:
+			e.copyLine()
+		case CTRL_V:
+			e.pasteLine()
 		case CTRL_F:
 			e.state.find = true
 		case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
@@ -533,6 +543,27 @@ func (e *Editor) processKeyPress(r rune) {
 		}
 	}
 
+}
+
+func (e *Editor) copyLine() {
+	e.state.buffer = e.lines[e.state.row]
+}
+
+func (e *Editor) cutLine() {
+	e.copyLine()
+	e.lines = slices.Delete(e.lines, e.state.row, e.state.row+1)
+	if e.state.row >= len(e.lines) {
+		e.moveCursor(ARROW_UP)
+	}
+	if len(e.lines[e.state.row].content) < e.state.col {
+		e.state.col = len(e.lines[e.state.row].content)
+	}
+}
+
+func (e *Editor) pasteLine() {
+	if e.state.buffer.content != "" {
+		e.lines = slices.Insert(e.lines, e.state.row, e.state.buffer)
+	}
 }
 
 func (e *Editor) handleTab() {
