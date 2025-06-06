@@ -334,7 +334,7 @@ func (e *Editor) moveCursor(r rune) {
 			}
 		}
 	case ARROW_DOWN:
-		if e.state.row < len(e.lines)-e.state.botMargin {
+		if e.state.row < min(len(e.lines)-1, e.state.maxRowOffset+e.state.numRow-e.state.botMargin) {
 			e.state.row++
 			e.state.col = e.state.anchor
 			if e.state.col > len(e.lines[e.state.row].content) {
@@ -420,7 +420,7 @@ func (e *Editor) makeFooter() string {
 func (e *Editor) drawRows(s string) string {
 	maxNumLen := 0
 	if e.state.showNumbers {
-		maxNumLen = len(fmt.Sprintf("%d", len(e.lines)-e.state.botMargin))
+		maxNumLen = len(fmt.Sprintf("%d", len(e.lines)))
 		e.state.leftMargin = maxNumLen + 1
 	}
 
