@@ -1,4 +1,4 @@
-package main
+package gtext
 
 import (
 	"bufio"
@@ -220,7 +220,7 @@ func (e *Editor) getCursorPosition() (int, int) {
 		e.shutdown("cursor position return not valid", 1)
 	}
 	var nrow, ncol int
-	_, err = fmt.Sscanf(fmt.Sprintf("%s", b[1:]), "[%d;%dR", &nrow, &ncol)
+	_, err = fmt.Sscanf(string(b[1:]), "[%d;%dR", &nrow, &ncol)
 	if err != nil {
 		e.shutdown(fmt.Sprintf("error parsing: %s", err), 1)
 	}
@@ -570,7 +570,7 @@ func (e *Editor) pasteLine() {
 }
 
 func (e *Editor) handleTab() {
-	if e.config.ExpandTabs == true {
+	if e.config.ExpandTabs {
 		for range e.config.TabSize {
 			e.writeRune(SPACE)
 		}
@@ -672,7 +672,7 @@ func (e *Editor) Start() (string, int) {
 			if res.err != nil {
 				return fmt.Sprintf("%s", res.err), 1
 			} else if res.r == CTRL_Q {
-				return fmt.Sprintf("Ctrl-Q"), 0
+				return "Ctrl-Q", 0
 			} else {
 				e.processKeyPress(res.r)
 			}
