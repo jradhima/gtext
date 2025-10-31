@@ -13,7 +13,6 @@ const CONFIGFILE string = ".gtext.conf"
 
 type Config struct {
 	ShowLineNumbers bool
-	ExpandTabs      bool
 	TabSize         int
 	ScrollMargin    int
 }
@@ -21,9 +20,8 @@ type Config struct {
 func LoadConfig() Config {
 	cfg := Config{
 		ShowLineNumbers: true,
-		ExpandTabs:      false,
 		TabSize:         4,
-		ScrollMargin:    3,
+		ScrollMargin:    5,
 	}
 
 	home, err := os.UserHomeDir()
@@ -54,8 +52,6 @@ func LoadConfig() Config {
 		switch key {
 		case "show_line_numbers":
 			cfg.ShowLineNumbers = val == "true"
-		case "expand_tabs":
-			cfg.ExpandTabs = val == "true"
 		case "tab_size":
 			if ts, err := strconv.Atoi(val); err == nil {
 				cfg.TabSize = ts

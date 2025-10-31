@@ -83,13 +83,15 @@ type KeyEvent struct {
 
 func NewEditor(r *os.File, fileName string) *Editor {
 	cfg := LoadConfig()
+	document := NewDocument(fileName, &cfg)
+	cursor := NewCursor(0, 0)
 	return &Editor{
 		reader:    bufio.NewReader(r),
 		view:      &View{cols: 1, rows: 1, botMargin: 2, status: ""},
-		cursor:    &Cursor{1, 1, 1, 1, 1},
+		cursor:    &cursor,
 		finder:    &Finder{find: false, findString: ""},
 		inputChan: make(chan KeyEvent),
-		document:  &Document{fileName: fileName, lines: []line{}, dirty: false},
+		document:  &document,
 		config:    &cfg,
 	}
 }
@@ -197,7 +199,7 @@ func (e *Editor) calculateRowOffset() {
 			}
 
 		} else if cursorScreenY >= e.view.rows-e.view.botMargin-e.config.ScrollMargin {
-			maxOffset := e.document.lineCount() - (e.view.rows - e.view.topMargin - e.view.botMargin)
+			maxOffset := e.document.lineCount() - (e.view.rows - e.view.topMargin - e.view.botMargin) + e.config.ScrollMargin
 			if e.view.maxRowOffset < maxOffset {
 				e.view.maxRowOffset++
 			} else {
@@ -291,7 +293,7 @@ func (e *Editor) moveRight() {
 	maxColumn := e.currentLineLength()
 	if e.cursor.col < maxColumn {
 		e.cursor.col++
-	} else if e.cursor.row < len(e.document.lines)-e.view.botMargin {
+	} else if e.cursor.row <= len(e.document.lines)-e.view.botMargin {
 		e.cursor.row++
 		e.cursor.col = 0
 	}
