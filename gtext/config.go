@@ -15,6 +15,7 @@ type Config struct {
 	ShowLineNumbers bool
 	ExpandTabs      bool
 	TabSize         int
+	ScrollMargin    int
 }
 
 func LoadConfig() Config {
@@ -22,6 +23,7 @@ func LoadConfig() Config {
 		ShowLineNumbers: true,
 		ExpandTabs:      false,
 		TabSize:         4,
+		ScrollMargin:    3,
 	}
 
 	home, err := os.UserHomeDir()

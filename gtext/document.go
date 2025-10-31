@@ -30,7 +30,7 @@ type line struct {
 func NewDocument(fileName string, config *Config) Document {
 	return Document{
 		fileName: fileName,
-		lines:    []line{line{"", ""}},
+		lines:    []line{{"", ""}},
 		dirty:    false,
 		buffer:   line{},
 		config:   config,
@@ -90,9 +90,10 @@ func (d *Document) checkPosition(row, col int) error {
 
 // getLine fetches the raw content of a line
 func (d *Document) getLine(row int) (string, error) {
-	err := d.checkPosition(row, 0)
-	if err != nil {
-		return "", fmt.Errorf("could not get line at row %d: %w", row, err)
+	lineCount := d.lineCount()
+
+	if row < 0 || row >= lineCount {
+		return "", ErrRowOutOfBounds
 	}
 	return d.lines[row].content, nil
 }
@@ -154,24 +155,24 @@ func (d *Document) insertRune(row, col int, r rune) error {
 
 // deleteRune deletes the rune at the specified location
 // does not handle merging of rows
-func (d *Document) deleteRune(row, col int) (newRow, newCol int, err error) {
-	err = d.checkPosition(row, col)
+func (d *Document) deleteRune(row, col int) error {
+	err := d.checkPosition(row, col)
 	if err != nil {
-		return 0, 0, fmt.Errorf("could not delete rune at row %d, col %d: %w", row, col, err)
+		return fmt.Errorf("could not delete rune at row %d, col %d: %w", row, col, err)
 	}
 
 	lineContent, err := d.getLine(row)
 	if err != nil {
-		return 0, 0, fmt.Errorf("could not get line at row %d: %w", row, err)
+		return fmt.Errorf("could not get line at row %d: %w", row, err)
 	}
 	lineRunes := []rune(lineContent)
 	modifiedLineRunes := slices.Delete(lineRunes, col-1, col)
 	err = d.replaceLine(row, string(modifiedLineRunes))
 	if err != nil {
-		return 0, 0, fmt.Errorf("could not replace line at row %d: %w", row, err)
+		return fmt.Errorf("could not replace line at row %d: %w", row, err)
 	}
 
-	return row, col - 1, nil
+	return nil
 }
 
 // inserts a new empty line at the specified position
@@ -266,7 +267,7 @@ func (d *Document) Load(r io.Reader) error {
 	}
 
 	if len(lines) == 0 {
-		d.lines = []line{line{"", ""}}
+		d.lines = []line{{"", ""}}
 	} else {
 		d.lines = lines
 	}

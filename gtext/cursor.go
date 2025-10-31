@@ -1,1 +1,56 @@
 package gtext
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+)
+
+type Cursor struct {
+	row, col                 int
+	renderedRow, renderedCol int
+	anchor                   int
+}
+
+func NewCursor(row, col int) Cursor {
+	return Cursor{
+		row: row,
+		col: col,
+	}
+}
+
+// getPosition returns the position of the cursor on the screen
+func (c *Cursor) getPosition() (int, int, error) {
+	_, err := fmt.Print(CURSOR_POSITION)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error requesting cursor position: %w", err)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	b, err := reader.ReadBytes('R')
+	if err != nil {
+		return 0, 0, fmt.Errorf("error reading stdin for cursor: %w", err)
+	} else if b[0] != '\x1b' || b[1] != '[' {
+		return 0, 0, fmt.Errorf("cursor position return not valid: %v", b)
+	}
+
+	var nrow, ncol int
+	_, err = fmt.Sscanf(string(b[1:]), "[%d;%dR", &nrow, &ncol)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error parsing cursor position return: %w", err)
+	}
+	return nrow, ncol, nil
+}
+
+func (c *Cursor) getCoordinates() (int, int) {
+	return c.row, c.col
+}
+
+// func (c *Cursor) getRenderedCoordinates() (int, int) {
+// 	return c.renderedRow, c.renderedCol
+// }
+
+func (c *Cursor) moveTo(row, col int) {
+	c.row = row
+	c.col = col
+}

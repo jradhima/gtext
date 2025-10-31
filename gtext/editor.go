@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -68,56 +67,6 @@ const (
 
 // structs and types
 
-type line struct {
-	content string
-	render  string
-}
-
-type position struct {
-	row, col int
-}
-
-type FindPositions struct {
-	positions []position
-	current   int
-}
-
-func (f *FindPositions) first() position {
-	if len(f.positions) == 0 {
-		return position{-1, -1}
-	} else {
-		return f.positions[0]
-	}
-}
-
-func (f *FindPositions) next() position {
-	if len(f.positions) == 0 {
-		return position{-1, -1}
-	} else if len(f.positions) == 1 {
-		return f.positions[0]
-	} else if f.current == len(f.positions)-1 {
-		f.current = 0
-		return f.positions[f.current]
-	} else {
-		f.current++
-		return f.positions[f.current]
-	}
-}
-
-func (f *FindPositions) previous() position {
-	if len(f.positions) == 0 {
-		return position{-1, -1}
-	} else if len(f.positions) == 1 {
-		return f.positions[0]
-	} else if f.current == 0 {
-		f.current = len(f.positions) - 1
-		return f.positions[f.current]
-	} else {
-		f.current--
-		return f.positions[f.current]
-	}
-}
-
 type Editor struct {
 	reader    *bufio.Reader
 	document  *Document
@@ -126,34 +75,7 @@ type Editor struct {
 	finder    *Finder
 	config    *Config
 	inputChan chan (KeyEvent)
-	buffer    line
-}
-
-type View struct {
-	cols, rows   int
-	maxRowOffset int
-	topMargin    int
-	botMargin    int
-	leftMargin   int
-	status       string
-}
-
-type Document struct {
-	fileName string
-	lines    []line
-	dirty    bool
-}
-
-type Cursor struct {
-	row, col                 int
-	renderedRow, renderedCol int
-	anchor                   int
-}
-
-type Finder struct {
-	find       bool
-	findString string
-	matches    FindPositions
+	// buffer    line
 }
 
 type KeyEvent struct {
@@ -195,36 +117,15 @@ func (e *Editor) getWindowSize() (int, int) {
 }
 
 func (e *Editor) getWindowSizeFallback() (int, int) {
-	size, err := fmt.Print(BOTTOM_RIGHT)
+	_, err := fmt.Print(BOTTOM_RIGHT)
 	if err != nil {
 		e.shutdown(fmt.Sprintf("%s", err), 1)
-	} else if size != 12 {
-		e.shutdown("Window size escape sequence error", 1)
 	}
-	return e.getCursorPosition()
-}
-
-func (e *Editor) getCursorPosition() (int, int) {
-	size, err := fmt.Print(CURSOR_POSITION)
+	row, col, err := e.cursor.getPosition()
 	if err != nil {
 		e.shutdown(fmt.Sprintf("%s", err), 1)
-	} else if size != 4 {
-		e.shutdown("cursor position escape sequence error", 1)
 	}
-
-	reader := bufio.NewReader(os.Stdin)
-	b, err := reader.ReadBytes('R')
-	if err != nil {
-		e.shutdown(fmt.Sprintf("%s", err), 1)
-	} else if b[0] != '\x1b' || b[1] != '[' {
-		e.shutdown("cursor position return not valid", 1)
-	}
-	var nrow, ncol int
-	_, err = fmt.Sscanf(string(b[1:]), "[%d;%dR", &nrow, &ncol)
-	if err != nil {
-		e.shutdown(fmt.Sprintf("error parsing: %s", err), 1)
-	}
-	return nrow, ncol
+	return row, col
 }
 
 // terminal functionality
@@ -305,166 +206,186 @@ func (e *Editor) readKeyPresses() {
 	}
 }
 
+// calculateRowOffset ensures the cursor is visible in the vertical axis
 func (e *Editor) calculateRowOffset() {
 	for {
-		if e.cursor.row-e.view.maxRowOffset < 0 {
-			e.view.maxRowOffset--
-		} else if e.cursor.row-e.view.maxRowOffset >= e.view.rows-e.view.botMargin {
-			e.view.maxRowOffset++
+		cursorScreenY := e.cursor.row - e.view.maxRowOffset
+
+		if cursorScreenY < e.view.topMargin+e.config.ScrollMargin {
+			if e.view.maxRowOffset > 0 {
+				e.view.maxRowOffset--
+			} else {
+				break
+			}
+
+		} else if cursorScreenY >= e.view.rows-e.view.botMargin-e.config.ScrollMargin {
+			maxOffset := e.document.lineCount() - (e.view.rows - e.view.topMargin - e.view.botMargin)
+			if e.view.maxRowOffset < maxOffset {
+				e.view.maxRowOffset++
+			} else {
+				break
+			}
+
 		} else {
 			break
 		}
 	}
-
 }
 
-func (e *Editor) colToRenderCol() int {
+// getCursorRenderCol returns the position of the cursor on the rendered line
+func (e *Editor) getCursorRenderCol(content string) int {
 	rCol := 0
-	l := e.document.lines[e.cursor.row]
-	for i := range e.cursor.col {
-		if rune(l.content[i]) == TAB {
+	for i, r := range content {
+		if i >= e.cursor.col {
+			break
+		}
+
+		if r == TAB {
 			rCol += (e.config.TabSize - 1) - (rCol % e.config.TabSize)
 		}
 		rCol++
 	}
+
 	return rCol
+}
+
+func (e *Editor) currentLineLength() int {
+	currentRow := e.cursor.row
+	return e.document.getLineLength(currentRow)
+}
+
+// updateScrollPosition ensures the cursor is visible in the view
+func (e *Editor) updateScrollPosition() {
+	currentLine, err := e.document.getLine(e.cursor.row)
+	if err != nil {
+		e.shutdown("error fetching current line", 2)
+	}
+
+	e.calculateRowOffset()
+	// e.calculateColOffset()
+	e.cursor.renderedRow = e.cursor.row - e.view.maxRowOffset + e.view.topMargin
+	e.cursor.renderedCol = e.getCursorRenderCol(currentLine) + e.view.leftMargin //- e.view.maxColOffset
+}
+
+func (e *Editor) moveUp() {
+	if e.cursor.row > 0 {
+		e.cursor.row--
+
+		e.cursor.col = e.cursor.anchor
+
+		targetLength := e.currentLineLength()
+
+		if e.cursor.col > targetLength {
+			e.cursor.col = targetLength
+		}
+	}
+}
+
+func (e *Editor) moveDown() {
+	maxValidRow := e.document.lineCount() - 1
+
+	if e.cursor.row < maxValidRow {
+		e.cursor.row++
+
+		e.cursor.col = e.cursor.anchor
+
+		targetLength := e.currentLineLength()
+
+		if e.cursor.col > targetLength {
+			e.cursor.col = targetLength
+		}
+
+	}
+}
+
+func (e *Editor) moveLeft() {
+	if e.cursor.col > 0 {
+		e.cursor.col--
+	} else if e.cursor.row > 0 {
+		e.cursor.row--
+		e.cursor.col = e.currentLineLength()
+	}
+
+	e.cursor.anchor = e.cursor.col
+}
+
+func (e *Editor) moveRight() {
+	maxColumn := e.currentLineLength()
+	if e.cursor.col < maxColumn {
+		e.cursor.col++
+	} else if e.cursor.row < len(e.document.lines)-e.view.botMargin {
+		e.cursor.row++
+		e.cursor.col = 0
+	}
+
+	e.cursor.anchor = e.cursor.col
+}
+
+func (e *Editor) setCursorRow(newRow int) {
+	if newRow == e.cursor.row {
+		return
+	}
+
+	e.cursor.row = max(0, newRow)
+	e.cursor.col = e.cursor.anchor
+
+	targetLength := e.currentLineLength()
+	if e.cursor.col > targetLength {
+		e.cursor.col = targetLength
+	}
+}
+
+func (e *Editor) pageUp() {
+	rowsToJump := e.view.rows - e.view.topMargin - e.view.botMargin
+	newRow := max(0, e.cursor.row-rowsToJump)
+	e.setCursorRow(newRow)
+}
+
+func (e *Editor) pageDown() {
+	maxValidRow := e.document.lineCount() - 1
+	if maxValidRow < 0 {
+		return
+	}
+
+	rowsToJump := e.view.rows - e.view.topMargin - e.view.botMargin
+	newRow := min(maxValidRow, e.cursor.row+rowsToJump)
+	e.setCursorRow(newRow)
 }
 
 func (e *Editor) moveCursor(r rune) {
 	switch r {
 	case ARROW_UP:
-		if e.cursor.row > 0 {
-			e.cursor.row--
-			e.cursor.col = e.cursor.anchor
-			if e.cursor.col > len(e.document.lines[e.cursor.row].content) {
-				e.cursor.col = len(e.document.lines[e.cursor.row].content)
-			}
-		}
+		e.moveUp()
 	case ARROW_DOWN:
-		if e.cursor.row < min(len(e.document.lines)-1, e.view.maxRowOffset+e.view.rows-e.view.botMargin) {
-			e.cursor.row++
-			e.cursor.col = e.cursor.anchor
-			if e.cursor.col > len(e.document.lines[e.cursor.row].content) {
-				e.cursor.col = len(e.document.lines[e.cursor.row].content)
-			}
-		}
-
+		e.moveDown()
 	case ARROW_LEFT:
-		if e.cursor.col > 0 {
-			e.cursor.col--
-		} else if e.cursor.row > 0 {
-			e.cursor.row--
-			e.cursor.col = len(e.document.lines[e.cursor.row].content)
-		}
-		e.cursor.anchor = e.cursor.col
+		e.moveLeft()
 	case ARROW_RIGHT:
-		if e.cursor.col < len(e.document.lines[e.cursor.row].content) {
-			e.cursor.col++
-		} else if e.cursor.row < len(e.document.lines)-e.view.botMargin {
-			e.cursor.row++
-			e.cursor.col = 0
-		}
-		e.cursor.anchor = e.cursor.col
+		e.moveRight()
 	case PAGE_UP:
-		for range PAGE_STEP {
-			e.moveCursor(ARROW_UP)
-		}
+		e.pageUp()
 	case PAGE_DOWN:
-		for range PAGE_STEP {
-			e.moveCursor(ARROW_DOWN)
-		}
+		e.pageDown()
 	case HOME:
 		e.cursor.col = 0
 	case END:
-		e.cursor.col = len(e.document.lines[e.cursor.row].content)
+		e.cursor.col = e.currentLineLength()
 	case NEW_LINE:
-		e.cursor.row++
-		e.cursor.col = 0
+		newRow, newCol, err := e.document.insertNewLine(e.cursor.getCoordinates())
+		if err != nil {
+			e.shutdown(err.Error(), 1)
+		}
+		e.cursor.moveTo(newRow, newCol)
+		e.cursor.anchor = newCol
 	}
+	e.updateScrollPosition()
 }
 
 // rendering
 
-func (e *Editor) makeFooter() string {
-	welcomeString := fmt.Sprintf("gtext -- v%s", VERSION)
-	editorState := fmt.Sprintf(
-		"[%d:%d] [lines: %d]",
-		e.cursor.row+1,
-		e.cursor.col+1,
-		len(e.document.lines),
-	)
-
-	s := BLACK_ON_WHITE
-	if e.finder.find {
-		findStringDisplay := fmt.Sprintf("[find: %s]", e.finder.findString)
-		s += "Exit: Ctrl-F | Search: Return/Enter | Next Match: Right, Down | Previous Match: Left, Up | " + findStringDisplay
-		n := len(e.finder.matches.positions)
-		if n > 0 {
-			s += fmt.Sprintf(" [match: %d/%d]", e.finder.matches.current+1, n)
-		}
-	} else {
-		s += "Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F | Cut: Ctrl-X | Copy: Ctrl-C | Paste: Ctrl-V"
-	}
-	s += CLEAR_RIGHT + RESET + "\r\n"
-
-	status := ""
-	if e.view.status == "" {
-		status = e.document.fileName
-		if e.document.dirty {
-			status += "*"
-		}
-	} else {
-		status = e.view.status
-	}
-
-	leftPadding := (e.view.cols-len(welcomeString))/2 - len(editorState)
-	rightPadding := (e.view.cols-len(welcomeString))/2 - len(status)
-
-	s += editorState + strings.Repeat(" ", max(leftPadding, 0)) + welcomeString + strings.Repeat(" ", max(0, rightPadding)) + status + CLEAR_RIGHT
-	return s
-}
-
-func (e *Editor) drawRows(s string) string {
-	maxNumLen := 0
-	if e.config.ShowLineNumbers {
-		maxNumLen = len(fmt.Sprintf("%d", len(e.document.lines)))
-		e.view.leftMargin = maxNumLen + 1
-	}
-
-	for idx := e.view.maxRowOffset; idx < e.view.maxRowOffset+e.view.rows-e.view.botMargin; idx++ {
-		if idx < len(e.document.lines) {
-			if e.config.ShowLineNumbers {
-				num := fmt.Sprintf("%d", idx+1)
-				s += strings.Repeat(" ", maxNumLen-len(num)) + num + " "
-			}
-
-			s += e.document.lines[idx].render + CLEAR_RIGHT + "\r\n"
-		} else {
-			s += "~" + CLEAR_RIGHT + "\r\n"
-		}
-	}
-	s += e.makeFooter()
-	return s
-}
-
-func (e *Editor) refreshScreen() {
-	ab := ""
-	ab += HIDE_CURSOR
-	ab += TOP_LEFT
-	ab = e.drawRows(ab)
-	ab += fmt.Sprintf(
-		"\x1b[%d;%dH",
-		e.cursor.renderedRow,
-		e.cursor.renderedCol)
-	ab += SHOW_CURSOR
-	fmt.Print(ab)
-}
-
 func (e *Editor) updateState() {
 	e.view.cols, e.view.rows = e.getWindowSize()
-	e.calculateRowOffset()
-	e.cursor.renderedRow = e.cursor.row - e.view.maxRowOffset + e.view.topMargin + 1
-	e.cursor.renderedCol = e.colToRenderCol() + e.view.leftMargin + 1
+	e.updateScrollPosition()
 }
 
 func (e *Editor) setDirty() {
@@ -517,30 +438,27 @@ func (e *Editor) processKeyPress(r rune) {
 		// case CTRL_Q:
 		// 	e.shutdown("Ctrl+Q", 0)
 		case CTRL_S:
-			e.saveFile()
+			e.document.SaveToDisk()
 			e.document.dirty = false
-		case CTRL_X:
-			e.cutLine()
-		case CTRL_C:
-			e.copyLine()
-		case CTRL_V:
-			e.pasteLine()
+		// case CTRL_X:
+		// 	e.cutLine()
+		// case CTRL_C:
+		// 	e.copyLine()
+		// case CTRL_V:
+		// 	e.pasteLine()
 		case CTRL_F:
 			e.finder.find = true
 		case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 			e.moveCursor(r)
 		case BACKSPACE, DELETE:
-			e.deleteRune()
+			e.handleDelete()
 			e.setDirty()
 		case RETURN:
-			e.insertNewLine()
-			e.setDirty()
-		case TAB:
-			e.handleTab()
+			e.handleNewLine()
 			e.setDirty()
 		default:
 			if unicode.IsPrint(r) {
-				e.writeRune(r)
+				e.handlePrintableRune(r)
 				e.setDirty()
 			}
 		}
@@ -548,98 +466,50 @@ func (e *Editor) processKeyPress(r rune) {
 
 }
 
-func (e *Editor) copyLine() {
-	e.buffer = e.document.lines[e.cursor.row]
-}
+func (e *Editor) handleDelete() {
+	row, col := e.cursor.getCoordinates()
 
-func (e *Editor) cutLine() {
-	e.copyLine()
-	e.document.lines = slices.Delete(e.document.lines, e.cursor.row, e.cursor.row+1)
-	if e.cursor.row >= len(e.document.lines) {
-		e.moveCursor(ARROW_UP)
-	}
-	if len(e.document.lines[e.cursor.row].content) < e.cursor.col {
-		e.cursor.col = len(e.document.lines[e.cursor.row].content)
-	}
-}
-
-func (e *Editor) pasteLine() {
-	if e.buffer.content != "" {
-		e.document.lines = slices.Insert(e.document.lines, e.cursor.row, e.buffer)
-	}
-}
-
-func (e *Editor) handleTab() {
-	if e.config.ExpandTabs {
-		for range e.config.TabSize {
-			e.writeRune(SPACE)
+	if col == 0 {
+		newRow, newCol, err := e.document.mergeLines(row)
+		if err != nil {
+			e.shutdown(fmt.Sprintf("Line merge failed: %v", err), 3)
 		}
+		e.cursor.moveTo(newRow, newCol)
+		e.cursor.anchor = newCol
+
 	} else {
-		e.writeRune(TAB)
-	}
-}
-
-func (e *Editor) writeRune(r rune) {
-	row, idx := e.cursor.row, e.cursor.col
-	if row < 0 || idx < 0 {
-		return
-	}
-
-	l := e.document.lines[row]
-	if l.content == "" {
-		e.document.lines[row].content = fmt.Sprintf("%c", r)
-	} else if idx == 0 {
-		e.document.lines[row].content = fmt.Sprintf("%c%s", r, l.content)
-	} else if idx == len(l.content)+1 {
-		e.document.lines[row].content = fmt.Sprintf("%s%c", l.content, r)
-	} else {
-		e.document.lines[row].content = fmt.Sprintf("%s%c%s", l.content[:idx], r, l.content[idx:])
-	}
-
-	e.document.lines[row].render = e.render(e.document.lines[row].content)
-	e.moveCursor(ARROW_RIGHT)
-}
-
-func (e *Editor) deleteRune() {
-	row, idx := e.cursor.row, e.cursor.col
-	if row < 0 || idx < 0 || len(e.document.lines) == 0 {
-		return
-	}
-	l := e.document.lines[row]
-	if idx == 0 { //case first position
-		if row == 0 { // top row do nothing
-			return
+		err := e.document.deleteRune(row, col)
+		if err != nil {
+			e.shutdown(fmt.Sprintf("Delete failed: %v", err), 3)
 		}
-		e.moveCursor(ARROW_LEFT)            // here because cursor must move first
-		if row == len(e.document.lines)-1 { // last row simple operation
-			e.document.lines[row-1].content = fmt.Sprintf("%s%s", e.document.lines[row-1].content, l.content)
-			e.document.lines = e.document.lines[:row]
-		} else { // in the middle need appending
-			e.document.lines[row-1].content = fmt.Sprintf("%s%s", e.document.lines[row-1].content, l.content)
-			e.document.lines = slices.Delete(e.document.lines, row, row+1) //append(e.document.lines[:row], e.document.lines[row+1:]...)
-		}
-
-		row = row - 1 // row to re-render after
-	} else { // somewhere in the middle
-		e.document.lines[row].content = fmt.Sprintf("%s%s", l.content[:idx-1], l.content[idx:])
-		e.moveCursor(ARROW_LEFT)
+		e.moveLeft()
 	}
 
-	e.document.lines[row].render = e.render(e.document.lines[row].content)
 }
 
-func (e *Editor) insertNewLine() {
-	row, idx := e.cursor.row, e.cursor.col
-	if row < 0 || idx < 0 {
-		return
-	}
-	l := e.document.lines[row]
-	lineBefore := line{l.content[:idx], e.render(l.content[:idx])}
-	lineAfter := line{l.content[idx:], e.render(l.content[idx:])}
+func (e *Editor) handleNewLine() {
+	row, col := e.cursor.getCoordinates()
 
-	e.document.lines[row] = lineBefore
-	e.document.lines = slices.Insert(e.document.lines, row+1, lineAfter)
-	e.moveCursor(NEW_LINE)
+	newRow, newCol, err := e.document.insertNewLine(row, col)
+
+	if err != nil {
+		e.shutdown(fmt.Sprintf("Newline insertion failed: %v", err), 3)
+	}
+
+	e.cursor.moveTo(newRow, newCol)
+	e.cursor.anchor = newCol
+}
+
+func (e *Editor) handlePrintableRune(r rune) {
+	row, col := e.cursor.getCoordinates()
+
+	err := e.document.insertRune(row, col, r)
+
+	if err != nil {
+		e.shutdown(fmt.Sprintf("Rune insertion failed: %v", err), 3)
+	}
+
+	e.moveRight()
 }
 
 // higher level functionality
@@ -663,7 +533,7 @@ func (e *Editor) find() {
 }
 
 func (e *Editor) Start() (string, int) {
-	e.loadFile()
+	e.document.LoadFromDisk()
 	go e.readKeyPresses()
 
 	for {
@@ -681,66 +551,4 @@ func (e *Editor) Start() (string, int) {
 		e.updateState()
 		e.refreshScreen()
 	}
-}
-
-func (e *Editor) render(s string) string {
-	c := ""
-	col := 0
-	for _, r := range s {
-		if r == TAB {
-			n := e.config.TabSize - (col % e.config.TabSize)
-			c += strings.Repeat(" ", n)
-			col += n
-		} else {
-			c += string(r)
-			col++
-		}
-	}
-	return c
-}
-
-func (e *Editor) loadFile() error {
-	file, err := os.OpenFile(e.document.fileName, os.O_RDONLY|os.O_CREATE, 0644)
-	if err != nil {
-		return fmt.Errorf("in loadFile: %w", err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		l := scanner.Text()
-		e.document.lines = append(e.document.lines, line{l, e.render(l)})
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("in loadFile: %w", err)
-	}
-
-	if len(e.document.lines) == 0 {
-		e.document.lines = append(e.document.lines, line{"", ""})
-	}
-
-	return nil
-}
-
-func (e *Editor) saveFile() error {
-	file, err := os.OpenFile(e.document.fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("in saveFile: %w", err)
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
-
-	s := ""
-	for _, l := range e.document.lines {
-		s += l.content + "\n"
-	}
-	_, err = writer.WriteString(s)
-	if err != nil {
-		return fmt.Errorf("in saveFile: %w", err)
-	}
-	e.view.status = fmt.Sprintf("%d bytes written to disc", len(s))
-	return nil
 }
