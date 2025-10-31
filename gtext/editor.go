@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"golang.org/x/term"
 )
 
 // const and setup
@@ -186,65 +188,9 @@ func (e *Editor) readKeyPresses() {
 	}
 }
 
-// calculateRowOffset ensures the cursor is visible in the vertical axis
-func (e *Editor) calculateRowOffset() {
-	for {
-		cursorScreenY := e.cursor.row - e.view.maxRowOffset
-
-		if cursorScreenY < e.view.topMargin+e.config.ScrollMargin {
-			if e.view.maxRowOffset > 0 {
-				e.view.maxRowOffset--
-			} else {
-				break
-			}
-
-		} else if cursorScreenY >= e.view.rows-e.view.botMargin-e.config.ScrollMargin {
-			maxOffset := e.document.lineCount() - (e.view.rows - e.view.topMargin - e.view.botMargin) + e.config.ScrollMargin
-			if e.view.maxRowOffset < maxOffset {
-				e.view.maxRowOffset++
-			} else {
-				break
-			}
-
-		} else {
-			break
-		}
-	}
-}
-
-// getCursorRenderCol returns the position of the cursor on the rendered line
-func (e *Editor) getCursorRenderCol(content string) int {
-	rCol := 0
-	for i, r := range content {
-		if i >= e.cursor.col {
-			break
-		}
-
-		if r == TAB {
-			rCol += (e.config.TabSize - 1) - (rCol % e.config.TabSize)
-		}
-		rCol++
-	}
-
-	return rCol
-}
-
 func (e *Editor) currentLineLength() int {
 	currentRow := e.cursor.row
 	return e.document.getLineLength(currentRow)
-}
-
-// updateScrollPosition ensures the cursor is visible in the view
-func (e *Editor) updateScrollPosition() {
-	currentLine, err := e.document.getLine(e.cursor.row)
-	if err != nil {
-		e.shutdown("error fetching current line", 2)
-	}
-
-	e.calculateRowOffset()
-	// e.calculateColOffset()
-	e.cursor.renderedRow = e.cursor.row - e.view.maxRowOffset + e.view.topMargin
-	e.cursor.renderedCol = e.getCursorRenderCol(currentLine) + e.view.leftMargin //- e.view.maxColOffset
 }
 
 func (e *Editor) moveUp() {
@@ -350,13 +296,6 @@ func (e *Editor) moveCursor(r rune) {
 		e.cursor.col = 0
 	case END:
 		e.cursor.col = e.currentLineLength()
-	case NEW_LINE:
-		newRow, newCol, err := e.document.insertNewLine(e.cursor.getCoordinates())
-		if err != nil {
-			e.shutdown(err.Error(), 1)
-		}
-		e.cursor.moveTo(newRow, newCol)
-		e.cursor.anchor = newCol
 	}
 	e.updateScrollPosition()
 }
@@ -436,8 +375,11 @@ func (e *Editor) processKeyPress(r rune) {
 		case RETURN:
 			e.handleNewLine()
 			e.setDirty()
+		case TAB:
+			e.handleTab()
+			e.setDirty()
 		default:
-			if unicode.IsPrint(r) {
+			if unicode.IsPrint(r) || r == SPACE {
 				e.handlePrintableRune(r)
 				e.setDirty()
 			}
@@ -478,6 +420,26 @@ func (e *Editor) handleNewLine() {
 
 	e.cursor.moveTo(newRow, newCol)
 	e.cursor.anchor = newCol
+}
+
+// handleTab inserts tabs, according to the editor configuration
+// it either inserts a tab rune or expands it as spaces
+func (e *Editor) handleTab() {
+	row, col := e.cursor.getCoordinates()
+
+	if e.config.ExpandTabs {
+		spaces := e.config.TabSize - (col % e.config.TabSize)
+		for range spaces {
+			e.document.insertRune(row, col, ' ')
+			col++
+		}
+	} else {
+		e.document.insertRune(row, col, TAB)
+		col++
+	}
+
+	e.cursor.moveTo(row, col)
+	e.cursor.anchor = col
 }
 
 func (e *Editor) handlePrintableRune(r rune) {
@@ -529,6 +491,26 @@ func (e *Editor) Start() (string, int) {
 		case <-time.After(INPUT_TIMEOUT):
 		}
 		e.updateState()
-		e.refreshScreen()
+		e.view.refreshScreen(e.document, e.config, e.cursor, e.finder)
 	}
+}
+
+func (e *Editor) getWindowSize() (int, int) {
+	ncol, nrow, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || (ncol == 0 && nrow == 0) {
+		return e.getWindowSizeFallback()
+	}
+	return ncol, nrow
+}
+
+func (e *Editor) getWindowSizeFallback() (int, int) {
+	_, err := fmt.Print(BOTTOM_RIGHT)
+	if err != nil {
+		e.shutdown(fmt.Sprintf("%s", err), 1)
+	}
+	row, col, err := e.cursor.getPosition()
+	if err != nil {
+		e.shutdown(fmt.Sprintf("%s", err), 1)
+	}
+	return row, col
 }
