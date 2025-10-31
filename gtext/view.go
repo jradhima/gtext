@@ -2,7 +2,10 @@ package gtext
 
 import (
 	"fmt"
+	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 type View struct {
@@ -78,14 +81,33 @@ func (e *Editor) drawRows(s string) string {
 }
 
 func (e *Editor) refreshScreen() {
+	row, col := e.cursor.ScreenCoords()
+
 	ab := ""
 	ab += HIDE_CURSOR
 	ab += TOP_LEFT
 	ab = e.drawRows(ab)
-	ab += fmt.Sprintf(
-		"\x1b[%d;%dH",
-		e.cursor.renderedRow,
-		e.cursor.renderedCol)
+	ab += fmt.Sprintf("\x1b[%d;%dH", row, col)
 	ab += SHOW_CURSOR
 	fmt.Print(ab)
+}
+
+func (e *Editor) getWindowSize() (int, int) {
+	ncol, nrow, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || (ncol == 0 && nrow == 0) {
+		return e.getWindowSizeFallback()
+	}
+	return ncol, nrow
+}
+
+func (e *Editor) getWindowSizeFallback() (int, int) {
+	_, err := fmt.Print(BOTTOM_RIGHT)
+	if err != nil {
+		e.shutdown(fmt.Sprintf("%s", err), 1)
+	}
+	row, col, err := e.cursor.getPosition()
+	if err != nil {
+		e.shutdown(fmt.Sprintf("%s", err), 1)
+	}
+	return row, col
 }

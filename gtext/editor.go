@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 	"unicode"
-
-	"golang.org/x/term"
 )
 
 // const and setup
@@ -106,26 +104,6 @@ func (e *Editor) shutdown(s string, code int) {
 	fmt.Print(CLEAR)
 	fmt.Print(TOP_LEFT)
 	os.Exit(code)
-}
-
-func (e *Editor) getWindowSize() (int, int) {
-	ncol, nrow, err := term.GetSize(int(os.Stdout.Fd()))
-	if err != nil || (ncol == 0 && nrow == 0) {
-		return e.getWindowSizeFallback()
-	}
-	return ncol, nrow
-}
-
-func (e *Editor) getWindowSizeFallback() (int, int) {
-	_, err := fmt.Print(BOTTOM_RIGHT)
-	if err != nil {
-		e.shutdown(fmt.Sprintf("%s", err), 1)
-	}
-	row, col, err := e.cursor.getPosition()
-	if err != nil {
-		e.shutdown(fmt.Sprintf("%s", err), 1)
-	}
-	return row, col
 }
 
 // terminal functionality

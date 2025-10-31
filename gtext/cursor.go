@@ -46,9 +46,10 @@ func (c *Cursor) getCoordinates() (int, int) {
 	return c.row, c.col
 }
 
-// func (c *Cursor) getRenderedCoordinates() (int, int) {
-// 	return c.renderedRow, c.renderedCol
-// }
+// ScreenCoords return individual 1-indexed row and col values
+func (c *Cursor) ScreenCoords() (int, int) {
+	return c.renderedRow + 1, c.renderedCol + 1
+}
 
 func (c *Cursor) moveTo(row, col int) {
 	c.row = row
