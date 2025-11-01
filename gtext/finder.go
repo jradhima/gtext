@@ -3,50 +3,62 @@ package gtext
 type Finder struct {
 	find       bool
 	findString string
-	matches    FindPositions
+	matches    []position
+	current    int
 }
 
 type position struct {
 	row, col int
 }
 
-type FindPositions struct {
-	positions []position
-	current   int
+func (f *Finder) numMatches() int {
+	return len(f.matches)
 }
 
-func (f *FindPositions) first() position {
-	if len(f.positions) == 0 {
+func (f *Finder) first() position {
+	if f.numMatches() == 0 {
 		return position{-1, -1}
 	} else {
-		return f.positions[0]
+		return f.matches[0]
 	}
 }
 
-func (f *FindPositions) next() position {
-	if len(f.positions) == 0 {
+func (f *Finder) next() position {
+	numMatches := f.numMatches()
+
+	if numMatches == 0 {
 		return position{-1, -1}
-	} else if len(f.positions) == 1 {
-		return f.positions[0]
-	} else if f.current == len(f.positions)-1 {
+	}
+
+	if numMatches == 1 {
+		return f.matches[0]
+	}
+
+	if f.current == numMatches-1 {
 		f.current = 0
-		return f.positions[f.current]
 	} else {
 		f.current++
-		return f.positions[f.current]
 	}
+
+	return f.matches[f.current]
 }
 
-func (f *FindPositions) previous() position {
-	if len(f.positions) == 0 {
+func (f *Finder) previous() position {
+	numMatches := f.numMatches()
+
+	if numMatches == 0 {
 		return position{-1, -1}
-	} else if len(f.positions) == 1 {
-		return f.positions[0]
-	} else if f.current == 0 {
-		f.current = len(f.positions) - 1
-		return f.positions[f.current]
+	}
+
+	if numMatches == 1 {
+		return f.matches[0]
+	}
+
+	if f.current == 0 {
+		f.current = numMatches - 1
 	} else {
 		f.current--
-		return f.positions[f.current]
 	}
+
+	return f.matches[f.current]
 }

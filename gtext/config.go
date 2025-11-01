@@ -52,8 +52,8 @@ func LoadConfig() Config {
 		val := strings.TrimSpace(parts[1])
 
 		switch key {
-		case "show_line_numbers":
-			cfg.ShowLineNumbers = val == "true"
+		// case "show_line_numbers":
+		// 	cfg.ShowLineNumbers = val == "true"
 		case "tab_size":
 			if ts, err := strconv.Atoi(val); err == nil {
 				cfg.TabSize = ts

@@ -55,6 +55,7 @@ const (
 	HIDE_CURSOR     = "\x1b[?25l"          // Hide cursor
 	SHOW_CURSOR     = "\x1b[?25h"          // Show cursor
 	BLACK_ON_WHITE  = "\x1b[30;47m"        // Set foreground to black, background to white
+	BLACK_ON_GREY   = "\x1b[30;48;5;240m"  // Set foreground to black, background to grey
 	RESET           = "\x1b[0m"            // Reset all SGR (Select Graphic Rendition) parameters
 )
 
@@ -63,6 +64,13 @@ const (
 	PAGE_STEP     = 20                     // Number of lines to scroll for page up/down
 	EXPAND_TABS   = false                  // Whether to expand tabs to spaces
 	TAB_SIZE      = 4                      // Number of spaces for a tab if expanded
+)
+
+type EditorMode byte
+
+const (
+	EditMode EditorMode = iota
+	FindMode
 )
 
 // structs and types
@@ -75,6 +83,7 @@ type Editor struct {
 	finder    *Finder
 	config    *Config
 	inputChan chan (KeyEvent)
+	mode      EditorMode
 	// buffer    line
 }
 
@@ -89,7 +98,7 @@ func NewEditor(r *os.File, fileName string) *Editor {
 	cursor := NewCursor(0, 0)
 	return &Editor{
 		reader:    bufio.NewReader(r),
-		view:      &View{cols: 1, rows: 1, botMargin: 2, status: ""},
+		view:      &View{cols: 1, rows: 1, botMargin: 2, leftMargin: LEFT_MARGIN, footer: &Footer{version: "0.0.1"}},
 		cursor:    &cursor,
 		finder:    &Finder{find: false, findString: ""},
 		inputChan: make(chan KeyEvent),
@@ -323,26 +332,26 @@ func (e *Editor) processKeyPress(r rune) {
 		case CTRL_F:
 			e.finder.find = false
 			e.finder.findString = ""
-			e.finder.matches = FindPositions{}
+			e.finder.matches = []position{}
 		case BACKSPACE, DELETE:
 			if len(e.finder.findString) > 0 {
 				e.finder.findString = e.finder.findString[:len(e.finder.findString)-1]
 			}
 		case RETURN:
 			e.find()
-			pos := e.finder.matches.first()
+			pos := e.finder.first()
 			if pos.row != -1 || pos.col != -1 {
 				e.cursor.row = pos.row
 				e.cursor.col = pos.col
 			}
 		case ARROW_DOWN, ARROW_RIGHT:
-			pos := e.finder.matches.next()
+			pos := e.finder.next()
 			if pos.row != -1 || pos.col != -1 {
 				e.cursor.row = pos.row
 				e.cursor.col = pos.col
 			}
 		case ARROW_LEFT, ARROW_UP:
-			pos := e.finder.matches.previous()
+			pos := e.finder.previous()
 			if pos.row != -1 || pos.col != -1 {
 				e.cursor.row = pos.row
 				e.cursor.col = pos.col
@@ -457,7 +466,7 @@ func (e *Editor) handlePrintableRune(r rune) {
 // higher level functionality
 
 func (e *Editor) find() {
-	indices := FindPositions{}
+	indices := []position{}
 	for i, l := range e.document.lines {
 		offset := 0
 		for {
@@ -466,7 +475,7 @@ func (e *Editor) find() {
 				break
 			} else {
 				absoluteIndex := offset + idx
-				indices.positions = append(indices.positions, position{i, absoluteIndex})
+				indices = append(indices, position{i, absoluteIndex})
 				offset = absoluteIndex + len(e.finder.findString)
 			}
 		}
@@ -491,7 +500,7 @@ func (e *Editor) Start() (string, int) {
 		case <-time.After(INPUT_TIMEOUT):
 		}
 		e.updateState()
-		e.view.refreshScreen(e.document, e.config, e.cursor, e.finder)
+		e.view.refreshScreen(e.mode, e.document, e.config, e.cursor, e.finder)
 	}
 }
 
