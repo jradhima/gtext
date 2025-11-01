@@ -107,7 +107,7 @@ func initConfig() {
 
 	var showLineNumbersBool bool
 	for {
-		prompt := fmt.Sprintf("Show line numbers (true/false) [%t]", defaults.ShowLineNumbers)
+		prompt := "Show line numbers (true/false)"
 		input := promptUser(prompt, fmt.Sprintf("%t", defaults.ShowLineNumbers))
 		if b, err := strconv.ParseBool(input); err == nil {
 			showLineNumbersBool = b
@@ -118,7 +118,7 @@ func initConfig() {
 
 	var expandTabsBool bool
 	for {
-		prompt := fmt.Sprintf("Expand tabs to spaces (true/false) [%t]", defaults.ExpandTabs)
+		prompt := "Expand tabs to spaces (true/false)"
 		input := promptUser(prompt, fmt.Sprintf("%t", defaults.ExpandTabs))
 		if b, err := strconv.ParseBool(input); err == nil {
 			expandTabsBool = b
@@ -129,7 +129,7 @@ func initConfig() {
 
 	var tabSizeInt int
 	for {
-		prompt := fmt.Sprintf("Tab size (number > 0) [%d]", defaults.TabSize)
+		prompt := "Tab size (number > 0)"
 		input := promptUser(prompt, fmt.Sprintf("%d", defaults.TabSize))
 		if ts, err := strconv.Atoi(input); err == nil && ts > 0 {
 			tabSizeInt = ts
@@ -140,7 +140,7 @@ func initConfig() {
 
 	var scrollMarginInt int
 	for {
-		prompt := fmt.Sprintf("Scroll margin (number >= 0) [%d]", defaults.ScrollMargin)
+		prompt := "Scroll margin (number >= 0)"
 		input := promptUser(prompt, fmt.Sprintf("%d", defaults.ScrollMargin))
 		if sm, err := strconv.Atoi(input); err == nil && sm >= 0 {
 			scrollMarginInt = sm
