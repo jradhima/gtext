@@ -93,15 +93,15 @@ type KeyEvent struct {
 }
 
 func NewEditor(r *os.File, fileName string) *Editor {
-	cfg := LoadConfig()
+	cfg := loadConfig()
 	return &Editor{
 		reader:    bufio.NewReader(r),
-		view:      NewView(1, 1, &cfg),
+		view:      NewView(1, 1, cfg),
 		cursor:    NewCursor(0, 0),
 		finder:    &Finder{},
 		inputChan: make(chan KeyEvent),
-		document:  NewDocument(fileName, &cfg),
-		config:    &cfg,
+		document:  NewDocument(fileName, cfg),
+		config:    cfg,
 		mode:      EditMode,
 	}
 }

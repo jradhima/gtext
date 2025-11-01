@@ -18,13 +18,18 @@ type Config struct {
 	ScrollMargin    int
 }
 
-func LoadConfig() Config {
+func DefaultConfig() *Config {
 	cfg := Config{
 		ShowLineNumbers: true,
 		ExpandTabs:      false,
 		TabSize:         4,
 		ScrollMargin:    5,
 	}
+	return &cfg
+}
+
+func loadConfig() *Config {
+	cfg := DefaultConfig()
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -32,7 +37,6 @@ func LoadConfig() Config {
 	}
 
 	file, err := os.Open(filepath.Join(home, CONFIGFILE))
-
 	if err != nil {
 		return cfg
 	}
@@ -44,22 +48,32 @@ func LoadConfig() Config {
 		if strings.HasPrefix(line, "#") || line == "" {
 			continue
 		}
+
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
 		}
+
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
 
 		switch key {
-		// case "show_line_numbers":
-		// 	cfg.ShowLineNumbers = val == "true"
+		case "show_line_numbers":
+			if b, err := strconv.ParseBool(val); err == nil {
+				cfg.ShowLineNumbers = b
+			}
+		case "expand_tabs":
+			if b, err := strconv.ParseBool(val); err == nil {
+				cfg.ExpandTabs = b
+			}
 		case "tab_size":
-			if ts, err := strconv.Atoi(val); err == nil {
+			if ts, err := strconv.Atoi(val); err == nil && ts > 0 {
 				cfg.TabSize = ts
 			}
-		default:
-			fmt.Printf("Warning: unknown config key '%s'\n", key)
+		case "scroll_margin":
+			if sm, err := strconv.Atoi(val); err == nil && sm >= 0 {
+				cfg.ScrollMargin = sm
+			}
 		}
 	}
 
@@ -81,29 +95,67 @@ func promptUser(prompt string, defaultValue string) string {
 	return input
 }
 
-func InitConfig() {
+func initConfig() {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Println("Error: could not determine home directory:", err)
 		os.Exit(1)
 	}
-
 	configPath := filepath.Join(home, CONFIGFILE)
 
-	showLineNumbers := promptUser("Show line numbers (true/false)", "true")
-	expandTabs := promptUser("Expand tabs to spaces (true/false)", "false")
-	tabSize := promptUser("Tab size (number)", "4")
-	tabSizeInt, err := strconv.Atoi(tabSize)
-	if err != nil || tabSizeInt <= 0 {
-		fmt.Println("Invalid tab size; using default (4)")
-		tabSize = "4"
+	defaults := DefaultConfig()
+
+	var showLineNumbersBool bool
+	for {
+		prompt := fmt.Sprintf("Show line numbers (true/false) [%t]", defaults.ShowLineNumbers)
+		input := promptUser(prompt, fmt.Sprintf("%t", defaults.ShowLineNumbers))
+		if b, err := strconv.ParseBool(input); err == nil {
+			showLineNumbersBool = b
+			break // Valid boolean, exit loop
+		}
+		fmt.Println("Invalid input. Please enter 'true' or 'false'.")
 	}
 
-	configContent := fmt.Sprintf(`# gtext config file
-show_line_numbers=%s
-expand_tabs=%s
-tab_size=%s
-`, showLineNumbers, expandTabs, tabSize)
+	var expandTabsBool bool
+	for {
+		prompt := fmt.Sprintf("Expand tabs to spaces (true/false) [%t]", defaults.ExpandTabs)
+		input := promptUser(prompt, fmt.Sprintf("%t", defaults.ExpandTabs))
+		if b, err := strconv.ParseBool(input); err == nil {
+			expandTabsBool = b
+			break
+		}
+		fmt.Println("Invalid input. Please enter 'true' or 'false'.")
+	}
+
+	var tabSizeInt int
+	for {
+		prompt := fmt.Sprintf("Tab size (number > 0) [%d]", defaults.TabSize)
+		input := promptUser(prompt, fmt.Sprintf("%d", defaults.TabSize))
+		if ts, err := strconv.Atoi(input); err == nil && ts > 0 {
+			tabSizeInt = ts
+			break
+		}
+		fmt.Println("Invalid input. Please enter a number greater than 0.")
+	}
+
+	var scrollMarginInt int
+	for {
+		prompt := fmt.Sprintf("Scroll margin (number >= 0) [%d]", defaults.ScrollMargin)
+		input := promptUser(prompt, fmt.Sprintf("%d", defaults.ScrollMargin))
+		if sm, err := strconv.Atoi(input); err == nil && sm >= 0 {
+			scrollMarginInt = sm
+			break
+		}
+		fmt.Println("Invalid input. Please enter a number 0 or greater.")
+	}
+
+	configContent := fmt.Sprintf(
+		`# gtext config file
+show_line_numbers=%t
+expand_tabs=%t
+tab_size=%d
+scroll_margin=%d
+`, showLineNumbersBool, expandTabsBool, tabSizeInt, scrollMarginInt)
 
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
