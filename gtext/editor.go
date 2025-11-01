@@ -94,16 +94,15 @@ type KeyEvent struct {
 
 func NewEditor(r *os.File, fileName string) *Editor {
 	cfg := LoadConfig()
-	document := NewDocument(fileName, &cfg)
-	cursor := NewCursor(0, 0)
 	return &Editor{
 		reader:    bufio.NewReader(r),
-		view:      &View{cols: 1, rows: 1, botMargin: 2, leftMargin: LEFT_MARGIN, footer: &Footer{version: "0.0.1"}},
-		cursor:    &cursor,
-		finder:    &Finder{find: false, findString: ""},
+		view:      NewView(1, 1, &cfg),
+		cursor:    NewCursor(0, 0),
+		finder:    &Finder{},
 		inputChan: make(chan KeyEvent),
-		document:  &document,
+		document:  NewDocument(fileName, &cfg),
 		config:    &cfg,
+		mode:      EditMode,
 	}
 }
 
@@ -248,7 +247,7 @@ func (e *Editor) moveRight() {
 	maxColumn := e.currentLineLength()
 	if e.cursor.col < maxColumn {
 		e.cursor.col++
-	} else if e.cursor.row <= len(e.document.lines)-e.view.botMargin {
+	} else if e.cursor.row <= len(e.document.lines)-e.view.bottomMargin {
 		e.cursor.row++
 		e.cursor.col = 0
 	}
@@ -271,7 +270,7 @@ func (e *Editor) setCursorRow(newRow int) {
 }
 
 func (e *Editor) pageUp() {
-	rowsToJump := e.view.rows - e.view.topMargin - e.view.botMargin
+	rowsToJump := e.view.rows - e.view.topMargin - e.view.bottomMargin
 	newRow := max(0, e.cursor.row-rowsToJump)
 	e.setCursorRow(newRow)
 }
@@ -282,7 +281,7 @@ func (e *Editor) pageDown() {
 		return
 	}
 
-	rowsToJump := e.view.rows - e.view.topMargin - e.view.botMargin
+	rowsToJump := e.view.rows - e.view.topMargin - e.view.bottomMargin
 	newRow := min(maxValidRow, e.cursor.row+rowsToJump)
 	e.setCursorRow(newRow)
 }
@@ -306,14 +305,12 @@ func (e *Editor) moveCursor(r rune) {
 	case END:
 		e.cursor.col = e.currentLineLength()
 	}
-	e.updateScrollPosition()
 }
 
 // rendering
 
 func (e *Editor) updateState() {
 	e.view.cols, e.view.rows = e.getWindowSize()
-	e.updateScrollPosition()
 }
 
 func (e *Editor) setDirty() {
@@ -324,77 +321,78 @@ func (e *Editor) setDirty() {
 // text editing
 
 func (e *Editor) processKeyPress(r rune) {
-	switch e.finder.find {
-	case true:
-		switch r {
-		case CTRL_Q:
-			e.shutdown("Ctrl+Q", 0)
-		case CTRL_F:
-			e.finder.find = false
-			e.finder.findString = ""
-			e.finder.matches = []position{}
-		case BACKSPACE, DELETE:
-			if len(e.finder.findString) > 0 {
-				e.finder.findString = e.finder.findString[:len(e.finder.findString)-1]
-			}
-		case RETURN:
-			e.find()
-			pos := e.finder.first()
-			if pos.row != -1 || pos.col != -1 {
-				e.cursor.row = pos.row
-				e.cursor.col = pos.col
-			}
-		case ARROW_DOWN, ARROW_RIGHT:
-			pos := e.finder.next()
-			if pos.row != -1 || pos.col != -1 {
-				e.cursor.row = pos.row
-				e.cursor.col = pos.col
-			}
-		case ARROW_LEFT, ARROW_UP:
-			pos := e.finder.previous()
-			if pos.row != -1 || pos.col != -1 {
-				e.cursor.row = pos.row
-				e.cursor.col = pos.col
-			}
-		default:
-			if unicode.IsPrint(r) || r == TAB {
-				e.finder.findString += string(r)
-			}
+	e.view.footer.clearStatus()
+	switch e.mode {
+	case EditMode:
+		e.handleEditModeKey(r)
+	case FindMode:
+		e.handleFindModeKey(r)
+	}
+}
+
+func (e *Editor) handleFindModeKey(r rune) {
+	switch r {
+	case CTRL_Q:
+		e.shutdown("Ctrl+Q", 0)
+	case CTRL_F:
+		e.mode = EditMode
+		e.finder.reset()
+	case BACKSPACE, DELETE:
+		if len(e.finder.findString) > 0 {
+			e.finder.findString = e.finder.findString[:len(e.finder.findString)-1]
 		}
-	case false:
-		switch r {
-		// case CTRL_Q:
-		// 	e.shutdown("Ctrl+Q", 0)
-		case CTRL_S:
-			e.document.SaveToDisk()
-			e.document.dirty = false
-		// case CTRL_X:
-		// 	e.cutLine()
-		// case CTRL_C:
-		// 	e.copyLine()
-		// case CTRL_V:
-		// 	e.pasteLine()
-		case CTRL_F:
-			e.finder.find = true
-		case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
-			e.moveCursor(r)
-		case BACKSPACE, DELETE:
-			e.handleDelete()
-			e.setDirty()
-		case RETURN:
-			e.handleNewLine()
-			e.setDirty()
-		case TAB:
-			e.handleTab()
-			e.setDirty()
-		default:
-			if unicode.IsPrint(r) || r == SPACE {
-				e.handlePrintableRune(r)
-				e.setDirty()
-			}
+	case RETURN:
+		e.find()
+		pos := e.finder.first()
+		if pos.row != -1 || pos.col != -1 {
+			e.cursor.row, e.cursor.col = pos.row, pos.col
+		}
+	case ARROW_DOWN, ARROW_RIGHT:
+		pos := e.finder.next()
+		if pos.row != -1 || pos.col != -1 {
+			e.cursor.row, e.cursor.col = pos.row, pos.col
+		}
+	case ARROW_LEFT, ARROW_UP:
+		pos := e.finder.previous()
+		if pos.row != -1 || pos.col != -1 {
+			e.cursor.row, e.cursor.col = pos.row, pos.col
+		}
+	default:
+		if unicode.IsPrint(r) || r == TAB {
+			e.finder.findString += string(r)
 		}
 	}
+}
 
+func (e *Editor) handleEditModeKey(r rune) {
+	switch r {
+	case CTRL_S:
+		n, err := e.document.SaveToDisk()
+		if err != nil {
+			e.view.footer.setStatus(fmt.Sprintf("Error saving: %v", err))
+		} else {
+			e.view.footer.setStatus(fmt.Sprintf("Wrote %d bytes", n))
+			e.document.dirty = false
+		}
+	case CTRL_F:
+		e.mode = FindMode
+	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
+		e.moveCursor(r)
+	case BACKSPACE, DELETE:
+		e.handleDelete()
+		e.setDirty()
+	case RETURN:
+		e.handleNewLine()
+		e.setDirty()
+	case TAB:
+		e.handleTab()
+		e.setDirty()
+	default:
+		if unicode.IsPrint(r) || r == SPACE {
+			e.handlePrintableRune(r)
+			e.setDirty()
+		}
+	}
 }
 
 func (e *Editor) handleDelete() {
@@ -500,7 +498,8 @@ func (e *Editor) Start() (string, int) {
 		case <-time.After(INPUT_TIMEOUT):
 		}
 		e.updateState()
-		e.view.refreshScreen(e.mode, e.document, e.config, e.cursor, e.finder)
+		e.updateScroll()
+		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder)
 	}
 }
 
@@ -522,4 +521,20 @@ func (e *Editor) getWindowSizeFallback() (int, int) {
 		e.shutdown(fmt.Sprintf("%s", err), 1)
 	}
 	return row, col
+}
+
+// updateScroll recalculates the view offset and cursor render position
+func (e *Editor) updateScroll() {
+	row, col := e.cursor.getCoordinates()
+
+	e.view.updateScroll(row, e.document.lineCount())
+
+	// Update cursor rendering positions relative to view
+	currentLine, err := e.document.getLine(row)
+	if err != nil {
+		e.shutdown("failed to get current line", 2)
+	}
+
+	e.cursor.renderedRow = row - e.view.rowOffset + e.view.topMargin
+	e.cursor.renderedCol = e.view.getCursorRenderCol(currentLine, e.config.TabSize, col) + e.view.leftMargin
 }

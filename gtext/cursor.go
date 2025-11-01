@@ -12,11 +12,12 @@ type Cursor struct {
 	anchor                   int
 }
 
-func NewCursor(row, col int) Cursor {
-	return Cursor{
+func NewCursor(row, col int) *Cursor {
+	cursor := Cursor{
 		row: row,
 		col: col,
 	}
+	return &cursor
 }
 
 // getPosition returns the position of the cursor on the screen

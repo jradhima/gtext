@@ -27,14 +27,15 @@ type line struct {
 	render  string
 }
 
-func NewDocument(fileName string, config *Config) Document {
-	return Document{
+func NewDocument(fileName string, config *Config) *Document {
+	doc := Document{
 		fileName: fileName,
 		lines:    []line{{"", ""}},
 		dirty:    false,
 		buffer:   line{},
 		config:   config,
 	}
+	return &doc
 }
 
 func (d *Document) lineCount() int {
@@ -290,36 +291,36 @@ func (d *Document) LoadFromDisk() error {
 }
 
 // Save writes the contents of the document into the writer
-func (d *Document) Save(w io.Writer) error {
+func (d *Document) Save(w io.Writer) (int, error) {
 	var builder strings.Builder
 	for _, line := range d.lines {
 		builder.WriteString(line.content)
 		builder.WriteRune('\n')
 	}
 
-	_, err := w.Write([]byte(builder.String()))
+	n, err := w.Write([]byte(builder.String()))
 	if err != nil {
-		return fmt.Errorf("error writing file: %w", err)
+		return 0, fmt.Errorf("error writing file: %w", err)
 	}
 
-	return nil
+	return n, nil
 }
 
 // SaveToDisk writes the contents to the document's filename
-func (d *Document) SaveToDisk() error {
+func (d *Document) SaveToDisk() (int, error) {
 	file, err := os.OpenFile(d.fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("error opening file %s from disk: %w", d.fileName, err)
+		return 0, fmt.Errorf("error opening file %s from disk: %w", d.fileName, err)
 	}
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
 	defer writer.Flush()
 
-	err = d.Save(writer)
+	n, err := d.Save(writer)
 	if err != nil {
-		return fmt.Errorf("failed to write content of file %s: %w", d.fileName, err)
+		return 0, fmt.Errorf("failed to write content of file %s: %w", d.fileName, err)
 	}
 
-	return nil
+	return n, nil
 }

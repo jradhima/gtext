@@ -1,7 +1,6 @@
 package gtext
 
 type Finder struct {
-	find       bool
 	findString string
 	matches    []position
 	current    int
@@ -9,6 +8,11 @@ type Finder struct {
 
 type position struct {
 	row, col int
+}
+
+func (f *Finder) reset() {
+	f.matches = nil
+	f.findString = ""
 }
 
 func (f *Finder) numMatches() int {

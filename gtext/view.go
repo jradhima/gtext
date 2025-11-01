@@ -10,14 +10,14 @@ const (
 )
 
 type View struct {
-	rows         int
-	cols         int
-	maxRowOffset int
+	rows, cols   int
+	rowOffset    int
 	topMargin    int
-	botMargin    int
+	bottomMargin int
 	leftMargin   int
 	status       string
-	footer       *Footer
+	footer       Footer
+	scrollMargin int
 }
 
 type Footer struct {
@@ -26,86 +26,125 @@ type Footer struct {
 	status  string
 }
 
-func (f *Footer) render(mode EditorMode, doc *Document, cfg *Config, cursor *Cursor, finder *Finder) string {
+func NewView(rows, cols int, cfg *Config) *View {
+	return &View{
+		rows:         rows,
+		cols:         cols,
+		topMargin:    0,
+		bottomMargin: 2,
+		leftMargin:   LEFT_MARGIN,
+		scrollMargin: cfg.ScrollMargin,
+		footer:       Footer{version: VERSION},
+	}
+}
+
+func (f *Footer) setStatus(msg string) {
+	f.status = msg
+}
+
+func (f *Footer) clearStatus() {
+	f.status = ""
+}
+
+// --- Rendering entry point ---
+func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) {
+	v.footer.width = v.cols
+	fmt.Print(HIDE_CURSOR + TOP_LEFT)
+	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder))
+	row, col := cur.ScreenCoords()
+	fmt.Printf("\x1b[%d;%dH%s", row, col, SHOW_CURSOR)
+}
+
+// --- Draw all visible lines and footer ---
+func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) string {
 	var builder strings.Builder
+	visibleRows := v.rows - v.bottomMargin
 
-	welcome := fmt.Sprintf("gtext : v%s", f.version)
-	row, col := cursor.ScreenCoords()
-	editorState := fmt.Sprintf("[%d:%d] [lines: %d]", row, col, doc.lineCount())
+	for screenRow := 0; screenRow < visibleRows; screenRow++ {
+		docRow := v.rowOffset + screenRow
+		lineText := v.renderLine(doc, docRow, cfg)
+		builder.WriteString(lineText)
+		builder.WriteString(CLEAR_RIGHT + "\r\n")
+	}
+	v.footer.width = v.cols
+	builder.WriteString(v.footer.render(mode, doc, cfg, cur, finder))
+	return builder.String()
+}
 
+// --- Draw a single line ---
+func (v *View) renderLine(doc *Document, row int, cfg *Config) string {
+	sideWidth := v.leftMargin - 1
+	if row >= doc.lineCount() {
+		return fmt.Sprintf("%s~", strings.Repeat(" ", sideWidth-1))
+	}
+	lineNum := fmt.Sprintf("%d", row+1)
+	if !cfg.ShowLineNumbers {
+		lineNum = "~"
+	}
+	padding := strings.Repeat(" ", sideWidth-len(lineNum))
+	return padding + lineNum + " " + doc.lines[row].render
+}
+
+func (f *Footer) render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) string {
+	var builder strings.Builder
 	builder.WriteString(BLACK_ON_WHITE)
 
 	switch mode {
 	case EditMode:
 		builder.WriteString("Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F | Cut: Ctrl-X | Copy: Ctrl-C | Paste: Ctrl-V")
-
 	case FindMode:
-		builder.WriteString("Exit: Ctrl-F | Search: Return/Enter | Next: Right, Down | Prev: Left, Up | ")
+		builder.WriteString("Exit: Ctrl-F | Search: Enter | Next: →↓ | Prev: ←↑ | ")
 		builder.WriteString(fmt.Sprintf("[find: %s]", finder.findString))
-
 		if finder.numMatches() > 0 {
 			builder.WriteString(fmt.Sprintf(" [match: %d/%d]", finder.current+1, finder.numMatches()))
 		}
 	}
-
 	builder.WriteString(CLEAR_RIGHT + RESET + "\r\n")
 
-	// --- status line ---
-	status := f.status
-	if status == "" {
-		status = doc.fileName
-		if doc.dirty {
-			status += "*"
-		}
+	row, col := cur.ScreenCoords()
+	dirtyMarker := ""
+	if doc.dirty {
+		dirtyMarker = "*"
 	}
 
-	leftPadding := (f.width-len(welcome))/2 - len(editorState)
-	rightPadding := (f.width-len(welcome))/2 - len(status)
+	editorState := fmt.Sprintf("[%d:%d] [lines: %d]", row, col, doc.lineCount())
+	center := fmt.Sprintf("gtext v%s", f.version)
+	status := doc.fileName + dirtyMarker
+	if f.status != "" {
+		status = f.status
+	}
+
+	// compute padding
+	leftPadding := max((f.width-len(center))/2-len(editorState), 0)
+	rightPadding := max((f.width-len(center))/2-len(status), 0)
 
 	builder.WriteString(editorState)
-	builder.WriteString(strings.Repeat(" ", max(leftPadding, 0)))
-	builder.WriteString(welcome)
-	builder.WriteString(strings.Repeat(" ", max(rightPadding, 0)))
+	builder.WriteString(strings.Repeat(" ", leftPadding))
+	builder.WriteString(center)
+	builder.WriteString(strings.Repeat(" ", rightPadding))
 	builder.WriteString(status)
 	builder.WriteString(CLEAR_RIGHT)
 
 	return builder.String()
 }
 
-// updateScrollPosition ensures the cursor is visible in the view
-func (e *Editor) updateScrollPosition() {
-	row, col := e.cursor.getCoordinates()
-	currentLine, err := e.document.getLine(row)
-	if err != nil {
-		e.shutdown("error fetching current line", 2)
-	}
-
-	e.view.calculateRowOffset(row, e.document.lineCount(), e.config.ScrollMargin)
-	// e.calculateColOffset()
-	e.cursor.renderedRow = row - e.view.maxRowOffset + e.view.topMargin
-	e.cursor.renderedCol = e.view.getCursorRenderCol(currentLine, e.config.TabSize, col) + e.view.leftMargin //- e.view.maxColOffset
-}
-
-// calculateRowOffset ensures the cursor is visible in the vertical axis
-func (v *View) calculateRowOffset(cursorRow, totalLines, scrollMargin int) {
+// --- Scroll logic ---
+func (v *View) updateScroll(cursorRow, totalLines int) {
 	for {
-		cursorScreenY := cursorRow - v.maxRowOffset
-
-		if cursorScreenY < v.topMargin+scrollMargin {
-			if v.maxRowOffset > 0 {
-				v.maxRowOffset--
+		screenY := cursorRow - v.rowOffset
+		if screenY < v.topMargin+v.scrollMargin {
+			if v.rowOffset > 0 {
+				v.rowOffset--
 			} else {
 				break
 			}
-
-		} else if cursorScreenY >= v.rows-v.botMargin-scrollMargin {
-			maxOffset := totalLines - (v.rows - v.topMargin - v.botMargin) + scrollMargin
-			if v.maxRowOffset < maxOffset {
-				v.maxRowOffset++
+		} else if screenY >= v.rows-v.bottomMargin-v.scrollMargin {
+			maxOffset := totalLines - (v.rows - v.topMargin - v.bottomMargin)
+			if v.rowOffset < maxOffset {
+				v.rowOffset++
 			} else {
 				break
 			}
-
 		} else {
 			break
 		}
@@ -127,53 +166,4 @@ func (v *View) getCursorRenderCol(content string, tabSize int, cursorCol int) in
 	}
 
 	return rCol
-}
-
-// func (v *View) makeLineNumber() {}
-
-// func (v *View) makeLineContent() {}
-
-// func (v *View) makeCommandBar() {}
-
-// func (v *View) makeStatusBar() {}
-
-// func (v *View) makeSearchBar(finder *Finder) string {
-// 	text := "Find: Ctrl-F"
-// 	bar := BLACK_ON_GREY + text + strings.Repeat(" ", v.cols-len(text)) + RESET + "\r\n"
-
-// 	return bar
-// }
-
-func (v *View) drawRows(mode EditorMode, doc *Document, cfg *Config, cursor *Cursor, finder *Finder) string {
-	s := ""
-	sideLen := v.leftMargin - 1
-	for idx := v.maxRowOffset; idx < v.maxRowOffset+v.rows-v.botMargin; idx++ {
-		var sideIndex string
-		if idx < len(doc.lines) {
-			if cfg.ShowLineNumbers {
-				sideIndex = fmt.Sprintf("%d", idx+1)
-			} else {
-				sideIndex = "~"
-			}
-			s += strings.Repeat(" ", sideLen-len(sideIndex)) + sideIndex + " "
-			s += doc.lines[idx].render + CLEAR_RIGHT + "\r\n"
-		} else {
-			sideIndex = "~" // Ensure sideIndex is always set
-			s += strings.Repeat(" ", sideLen-len(sideIndex)) + sideIndex + " " + CLEAR_RIGHT + "\r\n"
-		}
-	}
-	v.footer.status = v.status
-	v.footer.width = v.cols
-	v.footer.version = "0.0.1"
-	s += v.footer.render(mode, doc, cfg, cursor, finder)
-	return s
-}
-
-func (v *View) refreshScreen(mode EditorMode, doc *Document, cfg *Config, cursor *Cursor, finder *Finder) {
-	output := HIDE_CURSOR + TOP_LEFT
-	output += v.drawRows(mode, doc, cfg, cursor, finder)
-	row, col := cursor.ScreenCoords()
-	output += fmt.Sprintf("\x1b[%d;%dH", row, col)
-	output += SHOW_CURSOR
-	fmt.Print(output)
 }
