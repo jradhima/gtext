@@ -51,7 +51,7 @@ func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, 
 	v.footer.width = v.cols
 	fmt.Print(HIDE_CURSOR + TOP_LEFT)
 	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder))
-	row, col := cur.ScreenCoords()
+	row, col := cur.screenCoords()
 	fmt.Printf("\x1b[%d;%dH%s", row, col, SHOW_CURSOR)
 }
 
@@ -101,13 +101,13 @@ func (f *Footer) render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor
 	}
 	builder.WriteString(CLEAR_RIGHT + RESET + "\r\n")
 
-	row, col := cur.ScreenCoords()
+	row, col := cur.coords()
 	dirtyMarker := ""
 	if doc.dirty {
 		dirtyMarker = "*"
 	}
 
-	editorState := fmt.Sprintf("[%d:%d] [lines: %d]", row, col, doc.lineCount())
+	editorState := fmt.Sprintf("[%d:%d] [lines: %d]", row+1, col+1, doc.lineCount())
 	center := fmt.Sprintf("gtext v%s", f.version)
 	status := doc.fileName + dirtyMarker
 	if f.status != "" {
@@ -139,7 +139,7 @@ func (v *View) updateScroll(cursorRow, totalLines int) {
 				break
 			}
 		} else if screenY >= v.rows-v.bottomMargin-v.scrollMargin {
-			maxOffset := totalLines - (v.rows - v.topMargin - v.bottomMargin)
+			maxOffset := (totalLines - 1) - (v.topMargin + v.scrollMargin)
 			if v.rowOffset < maxOffset {
 				v.rowOffset++
 			} else {

@@ -43,12 +43,12 @@ func (c *Cursor) getPosition() (int, int, error) {
 	return nrow, ncol, nil
 }
 
-func (c *Cursor) getCoordinates() (int, int) {
+func (c *Cursor) coords() (int, int) {
 	return c.row, c.col
 }
 
 // ScreenCoords return individual 1-indexed row and col values
-func (c *Cursor) ScreenCoords() (int, int) {
+func (c *Cursor) screenCoords() (int, int) {
 	return c.renderedRow + 1, c.renderedCol + 1
 }
 

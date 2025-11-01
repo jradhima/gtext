@@ -396,7 +396,7 @@ func (e *Editor) handleEditModeKey(r rune) {
 }
 
 func (e *Editor) handleDelete() {
-	row, col := e.cursor.getCoordinates()
+	row, col := e.cursor.coords()
 
 	if col == 0 {
 		newRow, newCol, err := e.document.mergeLines(row)
@@ -417,7 +417,7 @@ func (e *Editor) handleDelete() {
 }
 
 func (e *Editor) handleNewLine() {
-	row, col := e.cursor.getCoordinates()
+	row, col := e.cursor.coords()
 
 	newRow, newCol, err := e.document.insertNewLine(row, col)
 
@@ -432,7 +432,7 @@ func (e *Editor) handleNewLine() {
 // handleTab inserts tabs, according to the editor configuration
 // it either inserts a tab rune or expands it as spaces
 func (e *Editor) handleTab() {
-	row, col := e.cursor.getCoordinates()
+	row, col := e.cursor.coords()
 
 	if e.config.ExpandTabs {
 		spaces := e.config.TabSize - (col % e.config.TabSize)
@@ -450,7 +450,7 @@ func (e *Editor) handleTab() {
 }
 
 func (e *Editor) handlePrintableRune(r rune) {
-	row, col := e.cursor.getCoordinates()
+	row, col := e.cursor.coords()
 
 	err := e.document.insertRune(row, col, r)
 
@@ -525,7 +525,7 @@ func (e *Editor) getWindowSizeFallback() (int, int) {
 
 // updateScroll recalculates the view offset and cursor render position
 func (e *Editor) updateScroll() {
-	row, col := e.cursor.getCoordinates()
+	row, col := e.cursor.coords()
 
 	e.view.updateScroll(row, e.document.lineCount())
 
