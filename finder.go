@@ -1,4 +1,4 @@
-package gtext
+package main
 
 type Finder struct {
 	findString string

@@ -5,7 +5,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/jradhima/gtext/gtext"
 	"golang.org/x/term"
 )
 
@@ -16,12 +15,12 @@ func runEditor() int {
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
-	editor := gtext.NewEditor(os.Stdin, os.Args[1])
+	editor := NewEditor(os.Stdin, os.Args[1])
 	shutdownMessage, exitCode := editor.Start()
 
-	fmt.Print(gtext.CLEAR + gtext.TOP_LEFT + fmt.Sprintf("Exiting: %s\r\n", shutdownMessage))
+	fmt.Print(CLEAR + TOP_LEFT + fmt.Sprintf("Exiting: %s\r\n", shutdownMessage))
 	time.Sleep(200 * time.Millisecond)
-	fmt.Print(gtext.CLEAR + gtext.TOP_LEFT)
+	fmt.Print(CLEAR + TOP_LEFT)
 
 	return exitCode
 }
@@ -32,7 +31,7 @@ func main() {
 	if len(args) == 2 {
 		switch args[1] {
 		case "config":
-			gtext.InitConfig()
+			InitConfig()
 			return
 		case "help":
 			fmt.Println("usage: gtext <filename> or gtext init")

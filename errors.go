@@ -1,4 +1,4 @@
-package gtext
+package main
 
 type gtextError string
 
