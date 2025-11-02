@@ -1,5 +1,10 @@
 package main
 
+import (
+	"strings"
+	"unicode"
+)
+
 type Finder struct {
 	findString string
 	matches    []position
@@ -65,4 +70,35 @@ func (f *Finder) previous() position {
 	}
 
 	return f.matches[f.current]
+}
+
+func (f *Finder) find(doc *Document) {
+	indices := []position{}
+	for i, l := range doc.lines {
+		offset := 0
+		for {
+			idx := strings.Index(l.content[offset:], f.findString)
+			if idx == -1 {
+				break
+			} else {
+				absoluteIndex := offset + idx
+				indices = append(indices, position{i, absoluteIndex})
+				offset = absoluteIndex + len(f.findString)
+			}
+		}
+	}
+	f.matches = indices
+}
+
+func (f *Finder) editFindString(r rune) {
+	switch r {
+	case BACKSPACE, DELETE:
+		if len(f.findString) > 0 {
+			f.findString = f.findString[:len(f.findString)-1]
+		}
+	default:
+		if unicode.IsPrint(r) || r == TAB {
+			f.findString += string(r)
+		}
+	}
 }

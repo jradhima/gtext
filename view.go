@@ -41,15 +41,15 @@ func (v *View) clearStatus() {
 }
 
 // --- Rendering entry point ---
-func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) {
+func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry) {
 	fmt.Print(HIDE_CURSOR + TOP_LEFT)
-	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder))
+	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder, cmds))
 	row, col := cur.screenCoords()
 	fmt.Printf("\x1b[%d;%dH%s", row, col, SHOW_CURSOR)
 }
 
 // --- Draw all visible lines and footer ---
-func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) string {
+func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry) string {
 	var builder strings.Builder
 	visibleRows := v.rows - v.bottomMargin
 
@@ -59,7 +59,7 @@ func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cur
 		builder.WriteString(lineText)
 		builder.WriteString(CLEAR_RIGHT + "\r\n")
 	}
-	builder.WriteString(v.makeFooter(mode, doc, cfg, cur, finder))
+	builder.WriteString(v.makeFooter(mode, doc, cfg, cur, finder, cmds))
 	return builder.String()
 }
 
@@ -77,16 +77,16 @@ func (v *View) renderLine(doc *Document, row int, cfg *Config) string {
 	return padding + lineNum + " " + doc.lines[row].render
 }
 
-func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) string {
+func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry) string {
 	var builder strings.Builder
 	builder.WriteString(BLACK_ON_WHITE)
 
 	switch mode {
 	case EditMode:
-		builder.WriteString("Save: Ctrl-S | Exit: Ctrl-Q | Find: Ctrl-F | Cut: Ctrl-X | Copy: Ctrl-C | Paste: Ctrl-V")
+		builder.WriteString(buildCommandHintLine(cmds))
 	case FindMode:
-		builder.WriteString("Exit: Ctrl-F | Search: Enter | Next: →↓ | Prev: ←↑ | ")
-		builder.WriteString(fmt.Sprintf("[find: %s]", finder.findString))
+		builder.WriteString("Ctrl-F: Exit find mode | Enter: Search substring | Next: →↓ | Prev: ←↑ | ")
+		builder.WriteString(fmt.Sprintf("[searching for: %s_]", finder.findString))
 		if finder.numMatches() > 0 {
 			builder.WriteString(fmt.Sprintf(" [match: %d/%d]", finder.current+1, finder.numMatches()))
 		}
@@ -158,4 +158,13 @@ func (v *View) getCursorRenderCol(content string, tabSize int, cursorCol int) in
 	}
 
 	return rCol
+}
+
+func buildCommandHintLine(cr *CommandRegistry) string {
+	var parts []string
+	for _, key := range cr.order {
+		cmd := cr.cmds[key]
+		parts = append(parts, fmt.Sprintf("%s: %s", cmd.name, cmd.desc))
+	}
+	return strings.Join(parts, " | ")
 }

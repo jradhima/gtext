@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 	"unicode"
 
@@ -54,9 +53,13 @@ const (
 	CURSOR_POSITION = "\x1b[6n"            // Request cursor position report
 	HIDE_CURSOR     = "\x1b[?25l"          // Hide cursor
 	SHOW_CURSOR     = "\x1b[?25h"          // Show cursor
-	BLACK_ON_WHITE  = "\x1b[30;47m"        // Set foreground to black, background to white
-	BLACK_ON_GREY   = "\x1b[30;48;5;240m"  // Set foreground to black, background to grey
-	RESET           = "\x1b[0m"            // Reset all SGR (Select Graphic Rendition) parameters
+)
+
+const (
+	HIGHLIGHT_MATCH = "\x1b[30;43m"
+	BLACK_ON_WHITE  = "\x1b[30;47m"       // Set foreground to black, background to white
+	BLACK_ON_GREY   = "\x1b[30;48;5;240m" // Set foreground to black, background to grey
+	RESET           = "\x1b[0m"           // Reset all SGR (Select Graphic Rendition) parameters
 )
 
 const (
@@ -84,6 +87,8 @@ type Editor struct {
 	config    *Config
 	inputChan chan (KeyEvent)
 	mode      EditorMode
+	commands  *CommandRegistry
+	exiting   bool
 	// buffer    line
 }
 
@@ -94,7 +99,7 @@ type KeyEvent struct {
 
 func NewEditor(r *os.File, fileName string) *Editor {
 	cfg := loadConfig()
-	return &Editor{
+	e := Editor{
 		reader:    bufio.NewReader(r),
 		view:      NewView(1, 1, cfg),
 		cursor:    NewCursor(0, 0),
@@ -103,7 +108,72 @@ func NewEditor(r *os.File, fileName string) *Editor {
 		document:  NewDocument(fileName, cfg),
 		config:    cfg,
 		mode:      EditMode,
+		commands:  &CommandRegistry{},
+		exiting:   false,
 	}
+	e.registerCommands()
+	return &e
+}
+
+func (e *Editor) registerCommands() {
+	e.commands.register(Command{
+		key:  CTRL_Q,
+		name: "Ctrl-Q",
+		desc: "Quit the editor",
+		action: func(e *Editor) {
+			if e.exiting {
+				e.shutdown("Exiting", 0)
+				return
+			}
+
+			if e.document.dirty {
+				e.view.setStatus("Unsaved changes, press Ctrl-Q again to exit.")
+				e.exiting = true
+				go func() {
+					time.Sleep(2 * time.Second)
+					e.exiting = false
+					e.view.clearStatus()
+				}()
+				return
+			}
+			e.shutdown("Exiting", 0)
+		},
+	})
+
+	e.commands.register(Command{
+		key:  CTRL_S,
+		name: "Ctrl-S",
+		desc: "Save file to disk",
+		action: func(e *Editor) {
+			n, err := e.document.SaveToDisk()
+			if err != nil {
+				e.view.setStatus(fmt.Sprintf("Error saving: %v", err))
+			} else {
+				e.view.setStatus(fmt.Sprintf("Wrote %d bytes", n))
+				e.document.dirty = false
+			}
+		},
+	})
+
+	e.commands.register(Command{
+		key:  CTRL_F,
+		name: "Ctrl-F",
+		desc: "Toggle find mode",
+		action: func(e *Editor) {
+			switch e.mode {
+			case EditMode:
+				e.mode = FindMode
+				e.view.setStatus("Find mode")
+			case FindMode:
+				e.mode = EditMode
+				e.finder.reset()
+				e.view.setStatus("Edit mode")
+			default:
+				e.shutdown(fmt.Sprintf("Invalid mode: %v", e.mode), 1)
+			}
+		},
+	})
+
 }
 
 func (e *Editor) shutdown(s string, code int) {
@@ -309,7 +379,7 @@ func (e *Editor) moveCursor(r rune) {
 
 // rendering
 
-func (e *Editor) updateState() {
+func (e *Editor) updateViewSize() {
 	e.view.cols, e.view.rows = e.getWindowSize()
 }
 
@@ -331,51 +401,51 @@ func (e *Editor) processKeyPress(r rune) {
 }
 
 func (e *Editor) handleFindModeKey(r rune) {
+	if e.commands.execute(e, r) {
+		return
+	}
+
 	switch r {
-	case CTRL_Q:
-		e.shutdown("Ctrl+Q", 0)
-	case CTRL_F:
-		e.mode = EditMode
-		e.finder.reset()
-	case BACKSPACE, DELETE:
-		if len(e.finder.findString) > 0 {
-			e.finder.findString = e.finder.findString[:len(e.finder.findString)-1]
-		}
 	case RETURN:
-		e.find()
-		pos := e.finder.first()
-		if pos.row != -1 || pos.col != -1 {
-			e.cursor.row, e.cursor.col = pos.row, pos.col
-		}
+		e.handleFind()
 	case ARROW_DOWN, ARROW_RIGHT:
-		pos := e.finder.next()
-		if pos.row != -1 || pos.col != -1 {
-			e.cursor.row, e.cursor.col = pos.row, pos.col
-		}
+		e.findNext()
 	case ARROW_LEFT, ARROW_UP:
-		pos := e.finder.previous()
-		if pos.row != -1 || pos.col != -1 {
-			e.cursor.row, e.cursor.col = pos.row, pos.col
-		}
+		e.findPrevious()
 	default:
-		if unicode.IsPrint(r) || r == TAB {
-			e.finder.findString += string(r)
-		}
+		e.finder.editFindString(r)
+	}
+}
+
+func (e *Editor) handleFind() {
+	e.finder.find(e.document)
+	pos := e.finder.first()
+	if pos.row != -1 || pos.col != -1 {
+		e.cursor.moveTo(pos.row, pos.col)
+
+	}
+}
+
+func (e *Editor) findNext() {
+	pos := e.finder.next()
+	if pos.row != -1 || pos.col != -1 {
+		e.cursor.moveTo(pos.row, pos.col)
+	}
+}
+
+func (e *Editor) findPrevious() {
+	pos := e.finder.previous()
+	if pos.row != -1 || pos.col != -1 {
+		e.cursor.moveTo(pos.row, pos.col)
 	}
 }
 
 func (e *Editor) handleEditModeKey(r rune) {
+	if e.commands.execute(e, r) {
+		return
+	}
+
 	switch r {
-	case CTRL_S:
-		n, err := e.document.SaveToDisk()
-		if err != nil {
-			e.view.setStatus(fmt.Sprintf("Error saving: %v", err))
-		} else {
-			e.view.setStatus(fmt.Sprintf("Wrote %d bytes", n))
-			e.document.dirty = false
-		}
-	case CTRL_F:
-		e.mode = FindMode
 	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 		e.moveCursor(r)
 	case BACKSPACE, DELETE:
@@ -463,24 +533,6 @@ func (e *Editor) handlePrintableRune(r rune) {
 
 // higher level functionality
 
-func (e *Editor) find() {
-	indices := []position{}
-	for i, l := range e.document.lines {
-		offset := 0
-		for {
-			idx := strings.Index(l.content[offset:], e.finder.findString)
-			if idx == -1 {
-				break
-			} else {
-				absoluteIndex := offset + idx
-				indices = append(indices, position{i, absoluteIndex})
-				offset = absoluteIndex + len(e.finder.findString)
-			}
-		}
-	}
-	e.finder.matches = indices
-}
-
 func (e *Editor) Start() (string, int) {
 	e.document.LoadFromDisk()
 	go e.readKeyPresses()
@@ -497,9 +549,9 @@ func (e *Editor) Start() (string, int) {
 			}
 		case <-time.After(INPUT_TIMEOUT):
 		}
-		e.updateState()
+		e.updateViewSize()
 		e.updateScroll()
-		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder)
+		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder, e.commands)
 	}
 }
 
