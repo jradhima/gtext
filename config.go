@@ -82,7 +82,7 @@ func loadConfig() *Config {
 
 func promptUser(prompt string, defaultValue string) string {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s [%s]: ", prompt, defaultValue)
+	fmt.Printf("%s [%s] (press Enter for default): ", prompt, defaultValue)
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("Error reading input:", err)

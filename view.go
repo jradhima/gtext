@@ -16,14 +16,8 @@ type View struct {
 	bottomMargin int
 	leftMargin   int
 	status       string
-	footer       Footer
 	scrollMargin int
-}
-
-type Footer struct {
-	version string
-	width   int
-	status  string
+	version      string
 }
 
 func NewView(rows, cols int, cfg *Config) *View {
@@ -34,21 +28,20 @@ func NewView(rows, cols int, cfg *Config) *View {
 		bottomMargin: 2,
 		leftMargin:   LEFT_MARGIN,
 		scrollMargin: cfg.ScrollMargin,
-		footer:       Footer{version: VERSION},
+		version:      VERSION,
 	}
 }
 
-func (f *Footer) setStatus(msg string) {
-	f.status = msg
+func (v *View) setStatus(msg string) {
+	v.status = msg
 }
 
-func (f *Footer) clearStatus() {
-	f.status = ""
+func (v *View) clearStatus() {
+	v.status = ""
 }
 
 // --- Rendering entry point ---
 func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) {
-	v.footer.width = v.cols
 	fmt.Print(HIDE_CURSOR + TOP_LEFT)
 	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder))
 	row, col := cur.screenCoords()
@@ -66,8 +59,7 @@ func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cur
 		builder.WriteString(lineText)
 		builder.WriteString(CLEAR_RIGHT + "\r\n")
 	}
-	v.footer.width = v.cols
-	builder.WriteString(v.footer.render(mode, doc, cfg, cur, finder))
+	builder.WriteString(v.makeFooter(mode, doc, cfg, cur, finder))
 	return builder.String()
 }
 
@@ -85,7 +77,7 @@ func (v *View) renderLine(doc *Document, row int, cfg *Config) string {
 	return padding + lineNum + " " + doc.lines[row].render
 }
 
-func (f *Footer) render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) string {
+func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder) string {
 	var builder strings.Builder
 	builder.WriteString(BLACK_ON_WHITE)
 
@@ -108,15 +100,15 @@ func (f *Footer) render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor
 	}
 
 	editorState := fmt.Sprintf("[%d:%d] [lines: %d]", row+1, col+1, doc.lineCount())
-	center := fmt.Sprintf("gtext v%s", f.version)
+	center := fmt.Sprintf("gtext v%s", v.version)
 	status := doc.fileName + dirtyMarker
-	if f.status != "" {
-		status = f.status
+	if v.status != "" {
+		status = v.status
 	}
 
 	// compute padding
-	leftPadding := max((f.width-len(center))/2-len(editorState), 0)
-	rightPadding := max((f.width-len(center))/2-len(status), 0)
+	leftPadding := max((v.cols-len(center))/2-len(editorState), 0)
+	rightPadding := max((v.cols-len(center))/2-len(status), 0)
 
 	builder.WriteString(editorState)
 	builder.WriteString(strings.Repeat(" ", leftPadding))

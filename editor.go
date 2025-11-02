@@ -321,7 +321,7 @@ func (e *Editor) setDirty() {
 // text editing
 
 func (e *Editor) processKeyPress(r rune) {
-	e.view.footer.clearStatus()
+	e.view.clearStatus()
 	switch e.mode {
 	case EditMode:
 		e.handleEditModeKey(r)
@@ -369,9 +369,9 @@ func (e *Editor) handleEditModeKey(r rune) {
 	case CTRL_S:
 		n, err := e.document.SaveToDisk()
 		if err != nil {
-			e.view.footer.setStatus(fmt.Sprintf("Error saving: %v", err))
+			e.view.setStatus(fmt.Sprintf("Error saving: %v", err))
 		} else {
-			e.view.footer.setStatus(fmt.Sprintf("Wrote %d bytes", n))
+			e.view.setStatus(fmt.Sprintf("Wrote %d bytes", n))
 			e.document.dirty = false
 		}
 	case CTRL_F:
