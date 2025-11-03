@@ -83,6 +83,7 @@ type Editor struct {
 	config       *Config
 	inputChan    chan KeyEvent
 	mode         EditorMode
+	buffer       []string
 	commands     *CommandRegistry
 	quitChan     chan struct{}
 	exiting      bool
@@ -114,6 +115,7 @@ func NewEditor(r *os.File, fileName string) *Editor {
 		document:    NewDocument(fileName, cfg),
 		config:      cfg,
 		mode:        EditMode,
+		buffer:      make([]string, 0),
 		commands:    &CommandRegistry{},
 		exiting:     false,
 		quitChan:    make(chan struct{}),
@@ -180,6 +182,68 @@ func (e *Editor) registerCommands() {
 			default:
 				e.requestShutdown("Unknown editor mode", 1)
 			}
+		},
+	})
+
+	e.commands.register(Command{
+		key:  CTRL_X,
+		name: "Ctrl-X",
+		desc: "Cut line",
+		action: func(e *Editor) {
+			currentRow := e.cursor.row
+			if currentRow == e.document.lineCount() {
+				e.moveUp()
+			}
+			content, err := e.document.getLine(currentRow)
+			if e.handleError("could not copy current line", err) {
+				return
+			}
+			err = e.document.removeLine(currentRow)
+			if e.handleError("could not remove current line", err) {
+				return
+			}
+			e.buffer = append(e.buffer, content)
+			e.view.setStatus("cut line", 1)
+		},
+	})
+
+	e.commands.register(Command{
+		key:  CTRL_C,
+		name: "Ctrl-C",
+		desc: "Copy line",
+		action: func(e *Editor) {
+			currentRow := e.cursor.row
+			content, err := e.document.getLine(currentRow)
+			if content == "" {
+				return
+			}
+			if e.handleError("could not copy current line", err) {
+				return
+			}
+			e.buffer = append(e.buffer, content)
+			e.view.setStatus("copied line", 1)
+		},
+	})
+
+	e.commands.register(Command{
+		key:  CTRL_V,
+		name: "Ctrl-V",
+		desc: "Paste line",
+		action: func(e *Editor) {
+			bufferLen := len(e.buffer)
+			if bufferLen == 0 {
+				return
+			}
+			currentRow := e.cursor.row
+			for idx, content := range e.buffer {
+				err := e.document.addLine(currentRow+idx, content)
+				if e.handleError("could not insert line", err) {
+					return
+				}
+				e.moveDown()
+			}
+			e.buffer = make([]string, 0)
+			e.view.setStatus(fmt.Sprintf("pasted %d lines", bufferLen), 1)
 		},
 	})
 }
@@ -537,7 +601,7 @@ func (e *Editor) Start() (string, int) {
 
 		e.updateViewSize()
 		e.updateScroll()
-		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder, e.commands)
+		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder, e.commands, len(e.buffer))
 	}
 }
 

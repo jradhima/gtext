@@ -48,15 +48,15 @@ func (v *View) clearStatus() {
 }
 
 // --- Rendering entry point ---
-func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry) {
+func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int) {
 	fmt.Print(HIDE_CURSOR + TOP_LEFT)
-	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder, cmds))
+	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder, cmds, bufferLen))
 	row, col := cur.screenCoords()
 	fmt.Printf("\x1b[%d;%dH%s", row, col, SHOW_CURSOR)
 }
 
 // --- Draw all visible lines and footer ---
-func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry) string {
+func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int) string {
 	var builder strings.Builder
 	visibleRows := v.rows - v.bottomMargin
 
@@ -66,7 +66,7 @@ func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cur
 		builder.WriteString(lineText)
 		builder.WriteString(CLEAR_RIGHT + "\r\n")
 	}
-	builder.WriteString(v.makeFooter(mode, doc, cfg, cur, finder, cmds))
+	builder.WriteString(v.makeFooter(mode, doc, cfg, cur, finder, cmds, bufferLen))
 	return builder.String()
 }
 
@@ -84,7 +84,7 @@ func (v *View) renderLine(doc *Document, row int, cfg *Config) string {
 	return padding + lineNum + " " + doc.lines[row].render
 }
 
-func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry) string {
+func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int) string {
 	var builder strings.Builder
 	builder.WriteString(BLACK_ON_WHITE)
 
@@ -107,6 +107,9 @@ func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Curs
 	}
 
 	editorState := fmt.Sprintf("[%d:%d] [lines: %d] [file: %s%s]", row+1, col+1, doc.lineCount(), doc.fileName, dirtyMarker)
+	if bufferLen > 0 {
+		editorState += fmt.Sprintf(" [buffer: %d lines]", bufferLen)
+	}
 	center := fmt.Sprintf("gtext v%s", v.version)
 
 	// compute padding
