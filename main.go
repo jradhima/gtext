@@ -23,8 +23,10 @@ func main() {
 	args := flag.Args()
 
 	if len(args) == 0 {
-		flag.Usage()
-		os.Exit(1)
+		defaultFile := "untitled.txt"
+		fmt.Printf("No file provided, starting new document: %s\n", defaultFile)
+		exitCode := Run(defaultFile)
+		os.Exit(exitCode)
 	}
 
 	switch args[0] {

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-	"time"
 )
 
 const (
@@ -16,7 +15,6 @@ type View struct {
 	topMargin    int
 	bottomMargin int
 	leftMargin   int
-	status       string
 	scrollMargin int
 	version      string
 }
@@ -33,30 +31,16 @@ func NewView(rows, cols int, cfg *Config) *View {
 	}
 }
 
-func (v *View) setStatus(msg string, n int) {
-	v.status = msg
-	if n > 0 {
-		go func() {
-			time.Sleep(time.Duration(n) * time.Second)
-			v.clearStatus()
-		}()
-	}
-}
-
-func (v *View) clearStatus() {
-	v.status = ""
-}
-
 // --- Rendering entry point ---
-func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int) {
+func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int, status string) {
 	fmt.Print(HIDE_CURSOR + TOP_LEFT)
-	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder, cmds, bufferLen))
+	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder, cmds, bufferLen, status))
 	row, col := cur.screenCoords()
 	fmt.Printf("\x1b[%d;%dH%s", row, col, SHOW_CURSOR)
 }
 
 // --- Draw all visible lines and footer ---
-func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int) string {
+func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int, status string) string {
 	var builder strings.Builder
 	visibleRows := v.rows - v.bottomMargin
 
@@ -66,7 +50,7 @@ func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cur
 		builder.WriteString(lineText)
 		builder.WriteString(CLEAR_RIGHT + "\r\n")
 	}
-	builder.WriteString(v.makeFooter(mode, doc, cfg, cur, finder, cmds, bufferLen))
+	builder.WriteString(v.makeFooter(mode, doc, cfg, cur, finder, cmds, bufferLen, status))
 	return builder.String()
 }
 
@@ -84,7 +68,7 @@ func (v *View) renderLine(doc *Document, row int, cfg *Config) string {
 	return padding + lineNum + " " + doc.lines[row].render
 }
 
-func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int) string {
+func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int, status string) string {
 	var builder strings.Builder
 	builder.WriteString(BLACK_ON_WHITE)
 
@@ -114,13 +98,13 @@ func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Curs
 
 	// compute padding
 	leftPadding := max((v.cols-len(center))/2-len(editorState), 0)
-	rightPadding := max((v.cols-len(center))/2-len(v.status), 0)
+	rightPadding := max((v.cols-len(center))/2-len(status), 0)
 
 	builder.WriteString(editorState)
 	builder.WriteString(strings.Repeat(" ", leftPadding))
 	builder.WriteString(center)
 	builder.WriteString(strings.Repeat(" ", rightPadding))
-	builder.WriteString(v.status)
+	builder.WriteString(status)
 	builder.WriteString(CLEAR_RIGHT)
 
 	return builder.String()
