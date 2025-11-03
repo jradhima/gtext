@@ -76,7 +76,7 @@ func getWindowSize() (int, int, error) {
 	if ncol == 0 && nrow == 0 {
 		return 0, 0, ErrWindowNullSize
 	}
-	return ncol, nrow, nil
+	return nrow, ncol, nil
 }
 
 func ReadKey(r *bufio.Reader) (rune, error) {
