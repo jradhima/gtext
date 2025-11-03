@@ -18,7 +18,6 @@ type Document struct {
 	fileName string
 	lines    []line
 	dirty    bool
-	buffer   line
 	config   *Config
 }
 
@@ -32,7 +31,6 @@ func NewDocument(fileName string, config *Config) *Document {
 		fileName: fileName,
 		lines:    []line{{"", ""}},
 		dirty:    false,
-		buffer:   line{},
 		config:   config,
 	}
 	return &doc

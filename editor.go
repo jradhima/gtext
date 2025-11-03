@@ -203,7 +203,7 @@ func (e *Editor) registerCommands() {
 				return
 			}
 			e.buffer = append(e.buffer, content)
-			e.view.setStatus(fmt.Sprintf("lines in buffer: %d", len(e.buffer)), 1)
+			e.view.setStatus("cut line", 1)
 		},
 	})
 
@@ -221,7 +221,7 @@ func (e *Editor) registerCommands() {
 				return
 			}
 			e.buffer = append(e.buffer, content)
-			e.view.setStatus(fmt.Sprintf("lines in buffer: %d", len(e.buffer)), 1)
+			e.view.setStatus("copied line", 1)
 		},
 	})
 
@@ -230,6 +230,10 @@ func (e *Editor) registerCommands() {
 		name: "Ctrl-V",
 		desc: "Paste line",
 		action: func(e *Editor) {
+			bufferLen := len(e.buffer)
+			if bufferLen == 0 {
+				return
+			}
 			currentRow := e.cursor.row
 			for idx, content := range e.buffer {
 				err := e.document.addLine(currentRow+idx, content)
@@ -239,7 +243,7 @@ func (e *Editor) registerCommands() {
 				e.moveDown()
 			}
 			e.buffer = make([]string, 0)
-			e.view.setStatus("cleared buffer", 1)
+			e.view.setStatus(fmt.Sprintf("pasted %d lines", bufferLen), 1)
 		},
 	})
 }
@@ -597,7 +601,7 @@ func (e *Editor) Start() (string, int) {
 
 		e.updateViewSize()
 		e.updateScroll()
-		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder, e.commands)
+		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder, e.commands, len(e.buffer))
 	}
 }
 
