@@ -667,10 +667,14 @@ func Run(fileName string) int {
 		fmt.Fprintf(os.Stderr, "Error setting raw terminal mode: %v\n", err)
 		return 1
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	editor := NewEditor(os.Stdin, fileName)
 	shutdownMessage, exitCode := editor.Start()
+
+	err = term.Restore(int(os.Stdin.Fd()), oldState)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to restore terminal state: %v\n", err)
+	}
 
 	fmt.Print(CLEAR + TOP_LEFT + fmt.Sprintf("Exiting gtext: %s\r\n", shutdownMessage))
 
