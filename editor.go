@@ -75,126 +75,138 @@ func NewEditor(r *os.File, fileName string) *Editor {
 
 func (e *Editor) registerCommands() {
 	e.commands.register(Command{
-		key:  CTRL_Q,
-		name: "Ctrl-Q",
-		desc: "Quit the editor",
-		action: func(e *Editor) {
-			if e.exiting {
-				e.requestShutdown("Quit", 0)
-				return
-			}
-
-			if e.document.dirty {
-				e.setStatus("Unsaved changes, press Ctrl-Q again to exit", 0)
-				e.exiting = true
-				go func() {
-					time.Sleep(2 * time.Second)
-					e.exiting = false
-					e.clearStatus()
-				}()
-				return
-			}
-			e.requestShutdown("Quit", 0)
-		},
+		key:    CTRL_Q,
+		name:   "Ctrl-Q",
+		desc:   "Quit",
+		action: e.handleQuit,
 	})
 
 	e.commands.register(Command{
-		key:  CTRL_S,
-		name: "Ctrl-S",
-		desc: "Save file to disk",
-		action: func(e *Editor) {
-			n, err := e.document.SaveToDisk()
-			if err != nil {
-				e.setStatus(fmt.Sprintf("Error saving: %v", err), 2)
-			} else {
-				e.setStatus(fmt.Sprintf("Wrote %d bytes", n), 2)
-				e.document.dirty = false
-			}
-		},
+		key:    CTRL_S,
+		name:   "Ctrl-S",
+		desc:   "Save file",
+		action: e.handleSave,
 	})
 
 	e.commands.register(Command{
-		key:  CTRL_F,
-		name: "Ctrl-F",
-		desc: "Toggle find mode",
-		action: func(e *Editor) {
-			switch e.mode {
-			case EditMode:
-				e.mode = FindMode
-				e.setStatus("Find mode", 2)
-			case FindMode:
-				e.mode = EditMode
-				e.setStatus("Edit mode", 2)
-				e.finder.reset()
-			default:
-				e.requestShutdown("Unknown editor mode", 1)
-			}
-		},
+		key:    CTRL_F,
+		name:   "Ctrl-F",
+		desc:   "Find mode",
+		action: e.handleFind,
 	})
 
 	e.commands.register(Command{
-		key:  CTRL_X,
-		name: "Ctrl-X",
-		desc: "Cut line",
-		action: func(e *Editor) {
-			currentRow := e.cursor.row
-			if currentRow == e.document.lineCount()-1 {
-				e.moveUp()
-			}
-			content, err := e.document.getLine(currentRow)
-			if e.handleError("could not copy current line", err) {
-				return
-			}
-			err = e.document.removeLine(currentRow)
-			if e.handleError("could not remove current line", err) {
-				return
-			}
-			e.setDirty()
-			e.buffer = append(e.buffer, content)
-			e.setStatus("cut line", 1)
-		},
+		key:    CTRL_X,
+		name:   "Ctrl-X",
+		desc:   "Cut line",
+		action: e.handleCut,
 	})
 
 	e.commands.register(Command{
-		key:  CTRL_C,
-		name: "Ctrl-C",
-		desc: "Copy line",
-		action: func(e *Editor) {
-			currentRow := e.cursor.row
-			content, err := e.document.getLine(currentRow)
-			if content == "" {
-				return
-			}
-			if e.handleError("could not copy current line", err) {
-				return
-			}
-			e.buffer = append(e.buffer, content)
-			e.setStatus("copied line", 1)
-		},
+		key:    CTRL_C,
+		name:   "Ctrl-C",
+		desc:   "Copy line",
+		action: e.handleCopy,
 	})
 
 	e.commands.register(Command{
-		key:  CTRL_V,
-		name: "Ctrl-V",
-		desc: "Paste line",
-		action: func(e *Editor) {
-			bufferLen := len(e.buffer)
-			if bufferLen == 0 {
-				return
-			}
-			currentRow := e.cursor.row
-			for idx, content := range e.buffer {
-				err := e.document.addLine(currentRow+idx, content)
-				if e.handleError("could not insert line", err) {
-					return
-				}
-				e.moveDown()
-				e.setDirty()
-			}
-			e.buffer = make([]string, 0)
-			e.setStatus(fmt.Sprintf("pasted %d lines", bufferLen), 1)
-		},
+		key:    CTRL_V,
+		name:   "Ctrl-V",
+		desc:   "Paste line",
+		action: e.handlePaste,
 	})
+}
+
+func (e *Editor) handleSave() {
+	n, err := e.document.SaveToDisk()
+	if err != nil {
+		e.setStatus(fmt.Sprintf("Error saving: %v", err), 2)
+	} else {
+		e.setStatus(fmt.Sprintf("Wrote %d bytes", n), 2)
+		e.document.dirty = false
+	}
+}
+
+func (e *Editor) handleCut() {
+	currentRow := e.cursor.row
+	if currentRow == e.document.lineCount()-1 {
+		e.moveUp()
+	}
+	content, err := e.document.getLine(currentRow)
+	if e.handleError("could not copy current line", err) {
+		return
+	}
+	err = e.document.removeLine(currentRow)
+	if e.handleError("could not remove current line", err) {
+		return
+	}
+	e.setDirty()
+	e.buffer = append(e.buffer, content)
+	e.setStatus("cut line", 1)
+}
+
+func (e *Editor) handleCopy() {
+	currentRow := e.cursor.row
+	content, err := e.document.getLine(currentRow)
+	if content == "" {
+		return
+	}
+	if e.handleError("could not copy current line", err) {
+		return
+	}
+	e.buffer = append(e.buffer, content)
+	e.setStatus("copied line", 1)
+}
+
+func (e *Editor) handlePaste() {
+	bufferLen := len(e.buffer)
+	if bufferLen == 0 {
+		return
+	}
+	currentRow := e.cursor.row
+	for idx, content := range e.buffer {
+		err := e.document.addLine(currentRow+idx, content)
+		if e.handleError("could not insert line", err) {
+			return
+		}
+		e.moveDown()
+		e.setDirty()
+	}
+	e.buffer = make([]string, 0)
+	e.setStatus(fmt.Sprintf("pasted %d lines", bufferLen), 1)
+}
+
+func (e *Editor) handleFind() {
+	switch e.mode {
+	case EditMode:
+		e.mode = FindMode
+		e.setStatus("Find mode", 2)
+	case FindMode:
+		e.mode = EditMode
+		e.setStatus("Edit mode", 2)
+		e.finder.reset()
+	default:
+		e.requestShutdown("Unknown editor mode", 1)
+	}
+}
+
+func (e *Editor) handleQuit() {
+	if e.exiting {
+		e.requestShutdown("Quit", 0)
+		return
+	}
+
+	if e.document.dirty {
+		e.setStatus("Unsaved changes, press Ctrl-Q again to exit", 0)
+		e.exiting = true
+		go func() {
+			time.Sleep(2 * time.Second)
+			e.exiting = false
+			e.clearStatus()
+		}()
+		return
+	}
+	e.requestShutdown("Quit", 0)
 }
 
 func (e *Editor) requestShutdown(msg string, code int) {
@@ -226,34 +238,11 @@ func (e *Editor) currentLineLength() int {
 }
 
 func (e *Editor) moveUp() {
-	if e.cursor.row > 0 {
-		e.cursor.row--
-
-		e.cursor.col = e.cursor.anchor
-
-		targetLength := e.currentLineLength()
-
-		if e.cursor.col > targetLength {
-			e.cursor.col = targetLength
-		}
-	}
+	e.cursor.setRowTo(e.cursor.row-1, e.document)
 }
 
 func (e *Editor) moveDown() {
-	maxValidRow := e.document.lineCount() - 1
-
-	if e.cursor.row < maxValidRow {
-		e.cursor.row++
-
-		e.cursor.col = e.cursor.anchor
-
-		targetLength := e.currentLineLength()
-
-		if e.cursor.col > targetLength {
-			e.cursor.col = targetLength
-		}
-
-	}
+	e.cursor.setRowTo(e.cursor.row+1, e.document)
 }
 
 func (e *Editor) moveLeft() {
@@ -279,35 +268,14 @@ func (e *Editor) moveRight() {
 	e.cursor.anchor = e.cursor.col
 }
 
-func (e *Editor) setCursorRow(newRow int) {
-	if newRow == e.cursor.row {
-		return
-	}
-
-	e.cursor.row = max(0, newRow)
-	e.cursor.col = e.cursor.anchor
-
-	targetLength := e.currentLineLength()
-	if e.cursor.col > targetLength {
-		e.cursor.col = targetLength
-	}
-}
-
 func (e *Editor) pageUp() {
 	rowsToJump := e.view.rows - e.view.topMargin - e.view.bottomMargin
-	newRow := max(0, e.cursor.row-rowsToJump)
-	e.setCursorRow(newRow)
+	e.cursor.setRowTo(e.cursor.row-rowsToJump, e.document)
 }
 
 func (e *Editor) pageDown() {
-	maxValidRow := e.document.lineCount() - 1
-	if maxValidRow < 0 {
-		return
-	}
-
 	rowsToJump := e.view.rows - e.view.topMargin - e.view.bottomMargin
-	newRow := min(maxValidRow, e.cursor.row+rowsToJump)
-	e.setCursorRow(newRow)
+	e.cursor.setRowTo(e.cursor.row+rowsToJump, e.document)
 }
 
 func (e *Editor) moveCursor(r rune) {
@@ -348,7 +316,7 @@ func (e *Editor) handleFindModeKey(r rune) {
 
 	switch r {
 	case RETURN:
-		e.handleFind()
+		e.findMatches()
 	case ARROW_DOWN, ARROW_RIGHT:
 		e.findNext()
 	case ARROW_LEFT, ARROW_UP:
@@ -358,7 +326,7 @@ func (e *Editor) handleFindModeKey(r rune) {
 	}
 }
 
-func (e *Editor) handleFind() {
+func (e *Editor) findMatches() {
 	e.finder.find(e.document)
 	pos := e.finder.first()
 	if pos.row != -1 || pos.col != -1 {
