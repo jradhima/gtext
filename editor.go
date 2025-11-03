@@ -191,7 +191,7 @@ func (e *Editor) registerCommands() {
 		desc: "Cut line",
 		action: func(e *Editor) {
 			currentRow := e.cursor.row
-			if currentRow == e.document.lineCount() {
+			if currentRow == e.document.lineCount()-1 {
 				e.moveUp()
 			}
 			content, err := e.document.getLine(currentRow)
