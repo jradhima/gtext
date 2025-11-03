@@ -31,6 +31,11 @@ func NewView(rows, cols int, cfg *Config) *View {
 	}
 }
 
+func (v *View) updateSize(rows, cols int) {
+	v.rows = rows
+	v.cols = cols
+}
+
 // --- Rendering entry point ---
 func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int, status string) {
 	fmt.Print(HIDE_CURSOR + TOP_LEFT)
@@ -131,23 +136,6 @@ func (v *View) updateScroll(cursorRow, totalLines int) {
 			break
 		}
 	}
-}
-
-// getCursorRenderCol returns the position of the cursor on the rendered line
-func (v *View) getCursorRenderCol(content string, tabSize int, cursorCol int) int {
-	rCol := 0
-	for i, r := range content {
-		if i >= cursorCol {
-			break
-		}
-
-		if r == TAB {
-			rCol += (tabSize - 1) - (rCol % tabSize)
-		}
-		rCol++
-	}
-
-	return rCol
 }
 
 func buildCommandHintLine(cr *CommandRegistry) string {
