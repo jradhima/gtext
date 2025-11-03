@@ -83,6 +83,7 @@ type Editor struct {
 	config       *Config
 	inputChan    chan KeyEvent
 	mode         EditorMode
+	status       string
 	buffer       []string
 	commands     *CommandRegistry
 	quitChan     chan struct{}
@@ -115,6 +116,7 @@ func NewEditor(r *os.File, fileName string) *Editor {
 		document:    NewDocument(fileName, cfg),
 		config:      cfg,
 		mode:        EditMode,
+		status:      "Edit Mode",
 		buffer:      make([]string, 0),
 		commands:    &CommandRegistry{},
 		exiting:     false,
@@ -138,12 +140,12 @@ func (e *Editor) registerCommands() {
 			}
 
 			if e.document.dirty {
-				e.view.setStatus("Unsaved changes, press Ctrl-Q again to exit", 0)
+				e.setStatus("Unsaved changes, press Ctrl-Q again to exit", 0)
 				e.exiting = true
 				go func() {
 					time.Sleep(2 * time.Second)
 					e.exiting = false
-					e.view.clearStatus()
+					e.clearStatus()
 				}()
 				return
 			}
@@ -158,9 +160,9 @@ func (e *Editor) registerCommands() {
 		action: func(e *Editor) {
 			n, err := e.document.SaveToDisk()
 			if err != nil {
-				e.view.setStatus(fmt.Sprintf("Error saving: %v", err), 2)
+				e.setStatus(fmt.Sprintf("Error saving: %v", err), 2)
 			} else {
-				e.view.setStatus(fmt.Sprintf("Wrote %d bytes", n), 2)
+				e.setStatus(fmt.Sprintf("Wrote %d bytes", n), 2)
 				e.document.dirty = false
 			}
 		},
@@ -174,11 +176,11 @@ func (e *Editor) registerCommands() {
 			switch e.mode {
 			case EditMode:
 				e.mode = FindMode
-				e.view.setStatus("Find mode", 0)
+				e.setStatus("Find mode", 2)
 			case FindMode:
 				e.mode = EditMode
+				e.setStatus("Edit mode", 2)
 				e.finder.reset()
-				e.view.setStatus("Edit mode", 0)
 			default:
 				e.requestShutdown("Unknown editor mode", 1)
 			}
@@ -202,8 +204,9 @@ func (e *Editor) registerCommands() {
 			if e.handleError("could not remove current line", err) {
 				return
 			}
+			e.setDirty()
 			e.buffer = append(e.buffer, content)
-			e.view.setStatus("cut line", 1)
+			e.setStatus("cut line", 1)
 		},
 	})
 
@@ -221,7 +224,7 @@ func (e *Editor) registerCommands() {
 				return
 			}
 			e.buffer = append(e.buffer, content)
-			e.view.setStatus("copied line", 1)
+			e.setStatus("copied line", 1)
 		},
 	})
 
@@ -241,9 +244,10 @@ func (e *Editor) registerCommands() {
 					return
 				}
 				e.moveDown()
+				e.setDirty()
 			}
 			e.buffer = make([]string, 0)
-			e.view.setStatus(fmt.Sprintf("pasted %d lines", bufferLen), 1)
+			e.setStatus(fmt.Sprintf("pasted %d lines", bufferLen), 1)
 		},
 	})
 }
@@ -440,7 +444,7 @@ func (e *Editor) moveCursor(r rune) {
 }
 
 func (e *Editor) processKeyPress(r rune) {
-	e.view.clearStatus()
+	e.clearStatus()
 	switch e.mode {
 	case EditMode:
 		e.handleEditModeKey(r)
@@ -601,7 +605,7 @@ func (e *Editor) Start() (string, int) {
 
 		e.updateViewSize()
 		e.updateScroll()
-		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder, e.commands, len(e.buffer))
+		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder, e.commands, len(e.buffer), e.status)
 	}
 }
 
@@ -650,15 +654,28 @@ func (e *Editor) updateViewSize() {
 
 func (e *Editor) setDirty() {
 	e.document.dirty = true
-	e.view.status = ""
 }
 
 func (e *Editor) handleError(msg string, err error) bool {
 	if err != nil {
-		e.view.setStatus(msg, 2)
+		e.setStatus(msg, 2)
 		return true
 	}
 	return false
+}
+
+func (e *Editor) setStatus(msg string, n int) {
+	e.status = msg
+	if n > 0 {
+		go func() {
+			time.Sleep(time.Duration(n) * time.Second)
+			e.clearStatus()
+		}()
+	}
+}
+
+func (e *Editor) clearStatus() {
+	e.status = ""
 }
 
 func Run(fileName string) int {
