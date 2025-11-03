@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
@@ -32,8 +33,14 @@ func NewView(rows, cols int, cfg *Config) *View {
 	}
 }
 
-func (v *View) setStatus(msg string) {
+func (v *View) setStatus(msg string, n int) {
 	v.status = msg
+	if n > 0 {
+		go func() {
+			time.Sleep(time.Duration(n) * time.Second)
+			v.clearStatus()
+		}()
+	}
 }
 
 func (v *View) clearStatus() {
@@ -99,22 +106,18 @@ func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Curs
 		dirtyMarker = "*"
 	}
 
-	editorState := fmt.Sprintf("[%d:%d] [lines: %d]", row+1, col+1, doc.lineCount())
+	editorState := fmt.Sprintf("[%d:%d] [lines: %d] [file: %s%s]", row+1, col+1, doc.lineCount(), doc.fileName, dirtyMarker)
 	center := fmt.Sprintf("gtext v%s", v.version)
-	status := doc.fileName + dirtyMarker
-	if v.status != "" {
-		status = v.status
-	}
 
 	// compute padding
 	leftPadding := max((v.cols-len(center))/2-len(editorState), 0)
-	rightPadding := max((v.cols-len(center))/2-len(status), 0)
+	rightPadding := max((v.cols-len(center))/2-len(v.status), 0)
 
 	builder.WriteString(editorState)
 	builder.WriteString(strings.Repeat(" ", leftPadding))
 	builder.WriteString(center)
 	builder.WriteString(strings.Repeat(" ", rightPadding))
-	builder.WriteString(status)
+	builder.WriteString(v.status)
 	builder.WriteString(CLEAR_RIGHT)
 
 	return builder.String()

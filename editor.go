@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 	"unicode"
 
@@ -69,28 +70,33 @@ const (
 	TAB_SIZE      = 4                      // Number of spaces for a tab if expanded
 )
 
+const (
+	ErrReturnSeqTerminator = gtextError("unexpected return sequence terminator")
+)
+
+type Editor struct {
+	reader       *bufio.Reader
+	document     *Document
+	view         *View
+	cursor       *Cursor
+	finder       *Finder
+	config       *Config
+	inputChan    chan KeyEvent
+	mode         EditorMode
+	commands     *CommandRegistry
+	quitChan     chan struct{}
+	exiting      bool
+	shutdownMsg  string
+	exitCode     int
+	shutdownOnce sync.Once
+}
+
 type EditorMode byte
 
 const (
 	EditMode EditorMode = iota
 	FindMode
 )
-
-// structs and types
-
-type Editor struct {
-	reader    *bufio.Reader
-	document  *Document
-	view      *View
-	cursor    *Cursor
-	finder    *Finder
-	config    *Config
-	inputChan chan (KeyEvent)
-	mode      EditorMode
-	commands  *CommandRegistry
-	exiting   bool
-	// buffer    line
-}
 
 type KeyEvent struct {
 	r   rune
@@ -99,20 +105,23 @@ type KeyEvent struct {
 
 func NewEditor(r *os.File, fileName string) *Editor {
 	cfg := loadConfig()
-	e := Editor{
-		reader:    bufio.NewReader(r),
-		view:      NewView(1, 1, cfg),
-		cursor:    NewCursor(0, 0),
-		finder:    &Finder{},
-		inputChan: make(chan KeyEvent),
-		document:  NewDocument(fileName, cfg),
-		config:    cfg,
-		mode:      EditMode,
-		commands:  &CommandRegistry{},
-		exiting:   false,
+	e := &Editor{
+		reader:      bufio.NewReader(r),
+		view:        NewView(1, 1, cfg),
+		cursor:      NewCursor(0, 0),
+		finder:      &Finder{},
+		inputChan:   make(chan KeyEvent, 32),
+		document:    NewDocument(fileName, cfg),
+		config:      cfg,
+		mode:        EditMode,
+		commands:    &CommandRegistry{},
+		exiting:     false,
+		quitChan:    make(chan struct{}),
+		shutdownMsg: "",
+		exitCode:    0,
 	}
 	e.registerCommands()
-	return &e
+	return e
 }
 
 func (e *Editor) registerCommands() {
@@ -122,12 +131,12 @@ func (e *Editor) registerCommands() {
 		desc: "Quit the editor",
 		action: func(e *Editor) {
 			if e.exiting {
-				e.shutdown("Exiting", 0)
+				e.requestShutdown("Quit", 0)
 				return
 			}
 
 			if e.document.dirty {
-				e.view.setStatus("Unsaved changes, press Ctrl-Q again to exit.")
+				e.view.setStatus("Unsaved changes, press Ctrl-Q again to exit", 0)
 				e.exiting = true
 				go func() {
 					time.Sleep(2 * time.Second)
@@ -136,7 +145,7 @@ func (e *Editor) registerCommands() {
 				}()
 				return
 			}
-			e.shutdown("Exiting", 0)
+			e.requestShutdown("Quit", 0)
 		},
 	})
 
@@ -147,9 +156,9 @@ func (e *Editor) registerCommands() {
 		action: func(e *Editor) {
 			n, err := e.document.SaveToDisk()
 			if err != nil {
-				e.view.setStatus(fmt.Sprintf("Error saving: %v", err))
+				e.view.setStatus(fmt.Sprintf("Error saving: %v", err), 2)
 			} else {
-				e.view.setStatus(fmt.Sprintf("Wrote %d bytes", n))
+				e.view.setStatus(fmt.Sprintf("Wrote %d bytes", n), 2)
 				e.document.dirty = false
 			}
 		},
@@ -163,107 +172,96 @@ func (e *Editor) registerCommands() {
 			switch e.mode {
 			case EditMode:
 				e.mode = FindMode
-				e.view.setStatus("Find mode")
+				e.view.setStatus("Find mode", 0)
 			case FindMode:
 				e.mode = EditMode
 				e.finder.reset()
-				e.view.setStatus("Edit mode")
+				e.view.setStatus("Edit mode", 0)
 			default:
-				e.shutdown(fmt.Sprintf("Invalid mode: %v", e.mode), 1)
+				e.requestShutdown("Unknown editor mode", 1)
 			}
 		},
 	})
-
 }
 
-func (e *Editor) shutdown(s string, code int) {
-	fmt.Print(CLEAR)
-	fmt.Print(TOP_LEFT)
-
-	fmt.Printf("Exiting: %s\r\n", s)
-	time.Sleep(250 * time.Millisecond)
-
-	fmt.Print(CLEAR)
-	fmt.Print(TOP_LEFT)
-	os.Exit(code)
+func (e *Editor) requestShutdown(msg string, code int) {
+	e.shutdownOnce.Do(func() {
+		e.shutdownMsg = msg
+		e.exitCode = code
+		close(e.quitChan)
+	})
 }
 
-// terminal functionality
-
-func (e *Editor) readKeyPresses() {
+func (e *Editor) readInputStream() {
 	for {
-		r, _, err := e.reader.ReadRune()
+		r, err := ReadKey(e.reader)
+		ke := KeyEvent{r, err}
+		select {
+		case e.inputChan <- ke:
+		case <-e.quitChan:
+			return
+		}
 		if err != nil {
-			e.inputChan <- KeyEvent{r: ESCAPE, err: err}
-			continue
+			return
 		}
-
-		if r == ESCAPE {
-			b, err := e.reader.Peek(1)
-			if err != nil || len(b) == 0 {
-				e.inputChan <- KeyEvent{r: ESCAPE, err: err}
-				continue
-			}
-
-			if b[0] == byte(CSI) {
-				e.reader.ReadRune()
-				b1, _, err := e.reader.ReadRune()
-				if err != nil {
-					e.inputChan <- KeyEvent{r: ESCAPE, err: err}
-					continue
-				}
-				switch b1 {
-				case 'A':
-					e.inputChan <- KeyEvent{r: ARROW_UP, err: nil}
-				case 'B':
-					e.inputChan <- KeyEvent{r: ARROW_DOWN, err: nil}
-				case 'C':
-					e.inputChan <- KeyEvent{r: ARROW_RIGHT, err: nil}
-				case 'D':
-					e.inputChan <- KeyEvent{r: ARROW_LEFT, err: nil}
-				case '5':
-					b2, _, err := e.reader.ReadRune()
-					if err != nil {
-						e.inputChan <- KeyEvent{r: ESCAPE, err: err}
-					}
-					if b2 == '~' {
-						e.inputChan <- KeyEvent{r: PAGE_UP, err: nil}
-					}
-				case '6':
-					b2, _, err := e.reader.ReadRune()
-					if err != nil {
-						e.inputChan <- KeyEvent{r: ESCAPE, err: err}
-					}
-					if b2 == '~' {
-						e.inputChan <- KeyEvent{r: PAGE_DOWN, err: nil}
-					}
-				case '1', '7':
-					b2, _, err := e.reader.ReadRune()
-					if err != nil {
-						e.inputChan <- KeyEvent{r: ESCAPE, err: err}
-					}
-					if b2 == '~' {
-						e.inputChan <- KeyEvent{r: HOME, err: nil}
-					}
-				case 'H':
-					e.inputChan <- KeyEvent{r: HOME, err: err}
-				case '4', '8':
-					b2, _, err := e.reader.ReadRune()
-					if err != nil {
-						e.inputChan <- KeyEvent{r: ESCAPE, err: err}
-					}
-					if b2 == '~' {
-						e.inputChan <- KeyEvent{r: END, err: nil}
-					}
-				case 'F':
-					e.inputChan <- KeyEvent{r: END, err: err}
-
-				}
-				continue
-			}
-		}
-		e.inputChan <- KeyEvent{r: r, err: err}
 	}
+}
+
+func ReadKey(r *bufio.Reader) (rune, error) {
+	ch, _, err := r.ReadRune()
+	if err != nil {
+		return 0, err
+	}
+	if ch != ESCAPE {
+		return ch, nil
+	}
+	seq, err := r.Peek(2)
+	if len(seq) != 2 || seq[0] != byte(CSI) {
+		return ESCAPE, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	r.ReadRune()
+	ch, _, _ = r.ReadRune()
+	switch ch {
+	case 'A':
+		return ARROW_UP, nil
+	case 'B':
+		return ARROW_DOWN, nil
+	case 'C':
+		return ARROW_RIGHT, nil
+	case 'D':
+		return ARROW_LEFT, nil
+	case 'H':
+		return HOME, nil
+	case 'F':
+		return END, nil
+	case '5':
+		ch, _, _ := r.ReadRune()
+		if ch == '~' {
+			return PAGE_UP, nil
+		}
+	case '6':
+		ch, _, _ := r.ReadRune()
+		if ch == '~' {
+			return PAGE_DOWN, nil
+		}
+	case '1', '7':
+		ch, _, _ := r.ReadRune()
+		if ch == '~' {
+			return HOME, nil
+		}
+	case '4', '8':
+		ch, _, _ := r.ReadRune()
+		if ch == '~' {
+			return END, nil
+		}
+	default:
+		return ESCAPE, nil
+	}
+	return 0, ErrReturnSeqTerminator
 }
 
 func (e *Editor) currentLineLength() int {
@@ -377,19 +375,6 @@ func (e *Editor) moveCursor(r rune) {
 	}
 }
 
-// rendering
-
-func (e *Editor) updateViewSize() {
-	e.view.cols, e.view.rows = e.getWindowSize()
-}
-
-func (e *Editor) setDirty() {
-	e.document.dirty = true
-	e.view.status = ""
-}
-
-// text editing
-
 func (e *Editor) processKeyPress(r rune) {
 	e.view.clearStatus()
 	switch e.mode {
@@ -470,16 +455,16 @@ func (e *Editor) handleDelete() {
 
 	if col == 0 {
 		newRow, newCol, err := e.document.mergeLines(row)
-		if err != nil {
-			e.shutdown(fmt.Sprintf("Line merge failed: %v", err), 3)
+		if e.handleError("failed to merge lines", err) {
+			return
 		}
 		e.cursor.moveTo(newRow, newCol)
 		e.cursor.anchor = newCol
 
 	} else {
 		err := e.document.deleteRune(row, col)
-		if err != nil {
-			e.shutdown(fmt.Sprintf("Delete failed: %v", err), 3)
+		if e.handleError("failed to delete character", err) {
+			return
 		}
 		e.moveLeft()
 	}
@@ -491,8 +476,8 @@ func (e *Editor) handleNewLine() {
 
 	newRow, newCol, err := e.document.insertNewLine(row, col)
 
-	if err != nil {
-		e.shutdown(fmt.Sprintf("Newline insertion failed: %v", err), 3)
+	if e.handleError("failed to insert newline", err) {
+		return
 	}
 
 	e.cursor.moveTo(newRow, newCol)
@@ -524,31 +509,32 @@ func (e *Editor) handlePrintableRune(r rune) {
 
 	err := e.document.insertRune(row, col, r)
 
-	if err != nil {
-		e.shutdown(fmt.Sprintf("Rune insertion failed: %v", err), 3)
+	if e.handleError("failed to insert character", err) {
+		return
 	}
 
 	e.moveRight()
 }
 
-// higher level functionality
-
 func (e *Editor) Start() (string, int) {
 	e.document.LoadFromDisk()
-	go e.readKeyPresses()
+	go e.readInputStream()
+
+	ticker := time.NewTicker(INPUT_TIMEOUT)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case res := <-e.inputChan:
 			if res.err != nil {
 				return fmt.Sprintf("%s", res.err), 1
-			} else if res.r == CTRL_Q {
-				return "Ctrl-Q", 0
-			} else {
-				e.processKeyPress(res.r)
 			}
-		case <-time.After(INPUT_TIMEOUT):
+			e.processKeyPress(res.r)
+		case <-ticker.C:
+		case <-e.quitChan:
+			return e.shutdownMsg, e.exitCode
 		}
+
 		e.updateViewSize()
 		e.updateScroll()
 		e.view.Render(e.mode, e.document, e.config, e.cursor, e.finder, e.commands)
@@ -566,11 +552,13 @@ func (e *Editor) getWindowSize() (int, int) {
 func (e *Editor) getWindowSizeFallback() (int, int) {
 	_, err := fmt.Print(BOTTOM_RIGHT)
 	if err != nil {
-		e.shutdown(fmt.Sprintf("%s", err), 1)
+		e.requestShutdown("failed to query terminal size (print)", 2)
+		return 80, 24
 	}
 	row, col, err := e.cursor.getPosition()
 	if err != nil {
-		e.shutdown(fmt.Sprintf("%s", err), 1)
+		e.requestShutdown("failed to query cursor position", 2)
+		return 80, 24
 	}
 	return row, col
 }
@@ -584,9 +572,43 @@ func (e *Editor) updateScroll() {
 	// Update cursor rendering positions relative to view
 	currentLine, err := e.document.getLine(row)
 	if err != nil {
-		e.shutdown("failed to get current line", 2)
+		e.requestShutdown("failed to read current line", 3)
+		return
 	}
 
 	e.cursor.renderedRow = row - e.view.rowOffset + e.view.topMargin
 	e.cursor.renderedCol = e.view.getCursorRenderCol(currentLine, e.config.TabSize, col) + e.view.leftMargin
+}
+
+func (e *Editor) updateViewSize() {
+	e.view.cols, e.view.rows = e.getWindowSize()
+}
+
+func (e *Editor) setDirty() {
+	e.document.dirty = true
+	e.view.status = ""
+}
+
+func (e *Editor) handleError(msg string, err error) bool {
+	if err != nil {
+		e.view.setStatus(msg, 2)
+		return true
+	}
+	return false
+}
+
+func Run(fileName string) int {
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error setting raw terminal mode: %v\n", err)
+		return 1
+	}
+	defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+	editor := NewEditor(os.Stdin, fileName)
+	shutdownMessage, exitCode := editor.Start()
+
+	fmt.Print(CLEAR + TOP_LEFT + fmt.Sprintf("Exiting gtext: %s\r\n", shutdownMessage))
+
+	return exitCode
 }

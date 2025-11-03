@@ -4,28 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
-
-	"golang.org/x/term"
 )
-
-func Run(fileName string) int {
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error setting raw terminal mode: %v\n", err)
-		return 1
-	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
-
-	editor := NewEditor(os.Stdin, fileName)
-	shutdownMessage, exitCode := editor.Start()
-
-	fmt.Print(CLEAR + TOP_LEFT + fmt.Sprintf("Exiting: %s\r\n", shutdownMessage))
-	time.Sleep(200 * time.Millisecond)
-	fmt.Print(CLEAR + TOP_LEFT)
-
-	return exitCode
-}
 
 func main() {
 
