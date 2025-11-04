@@ -310,7 +310,7 @@ func (e *Editor) processKeyPress(r rune) {
 }
 
 func (e *Editor) handleFindModeKey(r rune) {
-	if e.commands.execute(e, r) {
+	if e.commands.execute(r) {
 		return
 	}
 
@@ -350,7 +350,7 @@ func (e *Editor) findPrevious() {
 }
 
 func (e *Editor) handleEditModeKey(r rune) {
-	if e.commands.execute(e, r) {
+	if e.commands.execute(r) {
 		return
 	}
 
@@ -512,6 +512,7 @@ func (e *Editor) clearStatus() {
 }
 
 func Run(fileName string) int {
+	fmt.Print("\x1b[?1049h") // switch to alternate screen buffer
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error setting raw terminal mode: %v\n", err)
@@ -519,14 +520,13 @@ func Run(fileName string) int {
 	}
 
 	editor := NewEditor(os.Stdin, fileName)
-	shutdownMessage, exitCode := editor.Start()
+	_, exitCode := editor.Start()
 
 	err = term.Restore(int(os.Stdin.Fd()), oldState)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to restore terminal state: %v\n", err)
 	}
-
-	fmt.Print(CLEAR + TOP_LEFT + fmt.Sprintf("Exiting gtext: %s\r\n", shutdownMessage))
+	fmt.Print("\x1b[?1049l") // switch back to main screen buffer
 
 	return exitCode
 }
