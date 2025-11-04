@@ -360,7 +360,6 @@ func (e *Editor) handleEditModeKey(r rune) {
 	if e.commands.execute(r) {
 		return
 	}
-
 	switch r {
 	case ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT, PAGE_UP, PAGE_DOWN, HOME, END:
 		e.moveCursor(r)
@@ -383,7 +382,6 @@ func (e *Editor) handleEditModeKey(r rune) {
 
 func (e *Editor) handleDelete() {
 	row, col := e.cursor.coords()
-
 	if col == 0 {
 		newRow, newCol, err := e.document.mergeLines(row)
 		if e.handleError("failed to merge lines", err) {
@@ -391,7 +389,6 @@ func (e *Editor) handleDelete() {
 		}
 		e.cursor.moveTo(newRow, newCol)
 		e.cursor.anchor = newCol
-
 	} else {
 		err := e.document.deleteRune(row, col)
 		if e.handleError("failed to delete character", err) {
@@ -399,18 +396,14 @@ func (e *Editor) handleDelete() {
 		}
 		e.moveLeft()
 	}
-
 }
 
 func (e *Editor) handleNewLine() {
 	row, col := e.cursor.coords()
-
 	newRow, newCol, err := e.document.insertNewLine(row, col)
-
 	if e.handleError("failed to insert newline", err) {
 		return
 	}
-
 	e.cursor.moveTo(newRow, newCol)
 	e.cursor.anchor = newCol
 }
@@ -419,7 +412,6 @@ func (e *Editor) handleNewLine() {
 // it either inserts a tab rune or expands it as spaces
 func (e *Editor) handleTab() {
 	row, col := e.cursor.coords()
-
 	if e.config.ExpandTabs {
 		spaces := e.config.TabSize - (col % e.config.TabSize)
 		for range spaces {
@@ -430,20 +422,16 @@ func (e *Editor) handleTab() {
 		e.document.insertRune(row, col, TAB)
 		col++
 	}
-
 	e.cursor.moveTo(row, col)
 	e.cursor.anchor = col
 }
 
 func (e *Editor) handlePrintableRune(r rune) {
 	row, col := e.cursor.coords()
-
 	err := e.document.insertRune(row, col, r)
-
 	if e.handleError("failed to insert character", err) {
 		return
 	}
-
 	e.moveRight()
 }
 
@@ -473,22 +461,19 @@ func (e *Editor) Start() int {
 
 // updateComponents recalculates the view offset and cursor render position
 func (e *Editor) updateComponents() {
-	// 1. View updates its dimensions
 	rows, cols, err := getWindowSize()
 	if err != nil {
 		e.requestShutdown(1)
 	}
-	e.view.updateSize(rows, cols) // Assumes View has this method
+	e.view.updateSize(rows, cols)
 
-	e.view.updateScroll(e.cursor.row, e.document.lineCount()) // Assumes View has this
+	e.view.updateScroll(e.cursor.row, e.document.lineCount())
 
-	// 3. Cursor updates its rendered position based on View
 	currentLine, err := e.document.getLine(e.cursor.row)
 	if err != nil {
 		e.requestShutdown(3)
 		return
 	}
-	// Assumes Cursor has this method
 	e.cursor.updateRenderedPos(e.view, currentLine, e.config.TabSize)
 }
 

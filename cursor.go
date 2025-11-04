@@ -41,13 +41,11 @@ func (c *Cursor) calculateRenderCol(content string, tabSize int, col int) int {
 		if i >= col {
 			break
 		}
-
 		if r == TAB {
 			rCol += (tabSize - 1) - (rCol % tabSize)
 		}
 		rCol++
 	}
-
 	return rCol
 }
 
@@ -55,12 +53,10 @@ func (c *Cursor) setRowTo(newRow int, doc *Document) {
 	if newRow == c.row {
 		return
 	}
-
 	maxValidRow := doc.lineCount() - 1
 	if maxValidRow < 0 {
 		maxValidRow = 0
 	}
-
 	c.row = newRow
 	if c.row < 0 {
 		c.row = 0
@@ -68,9 +64,7 @@ func (c *Cursor) setRowTo(newRow int, doc *Document) {
 	if c.row > maxValidRow {
 		c.row = maxValidRow
 	}
-
 	c.col = c.anchor
-
 	targetLength := doc.getLineLength(c.row)
 	if c.col > targetLength {
 		c.col = targetLength
