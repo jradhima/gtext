@@ -22,7 +22,7 @@ func (cr *CommandRegistry) register(cmd Command) {
 	cr.cmds[cmd.key] = cmd
 }
 
-func (cr *CommandRegistry) execute(e *Editor, key rune) bool {
+func (cr *CommandRegistry) execute(key rune) bool {
 	if cmd, ok := cr.cmds[key]; ok {
 		cmd.action()
 		return true
