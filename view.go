@@ -31,7 +31,12 @@ func NewView(rows, cols int, cfg *Config) *View {
 	}
 }
 
-// --- Rendering entry point ---
+func (v *View) updateSize(rows, cols int) {
+	v.rows = rows
+	v.cols = cols
+}
+
+// Render is the main entry point
 func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int, status string) {
 	fmt.Print(HIDE_CURSOR + TOP_LEFT)
 	fmt.Print(v.drawContent(mode, doc, cfg, cur, finder, cmds, bufferLen, status))
@@ -39,7 +44,6 @@ func (v *View) Render(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, 
 	fmt.Printf("\x1b[%d;%dH%s", row, col, SHOW_CURSOR)
 }
 
-// --- Draw all visible lines and footer ---
 func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cursor, finder *Finder, cmds *CommandRegistry, bufferLen int, status string) string {
 	var builder strings.Builder
 	visibleRows := v.rows - v.bottomMargin
@@ -54,7 +58,6 @@ func (v *View) drawContent(mode EditorMode, doc *Document, cfg *Config, cur *Cur
 	return builder.String()
 }
 
-// --- Draw a single line ---
 func (v *View) renderLine(doc *Document, row int, cfg *Config) string {
 	sideWidth := v.leftMargin - 1
 	if row >= doc.lineCount() {
@@ -110,7 +113,6 @@ func (v *View) makeFooter(mode EditorMode, doc *Document, cfg *Config, cur *Curs
 	return builder.String()
 }
 
-// --- Scroll logic ---
 func (v *View) updateScroll(cursorRow, totalLines int) {
 	for {
 		screenY := cursorRow - v.rowOffset
@@ -131,23 +133,6 @@ func (v *View) updateScroll(cursorRow, totalLines int) {
 			break
 		}
 	}
-}
-
-// getCursorRenderCol returns the position of the cursor on the rendered line
-func (v *View) getCursorRenderCol(content string, tabSize int, cursorCol int) int {
-	rCol := 0
-	for i, r := range content {
-		if i >= cursorCol {
-			break
-		}
-
-		if r == TAB {
-			rCol += (tabSize - 1) - (rCol % tabSize)
-		}
-		rCol++
-	}
-
-	return rCol
 }
 
 func buildCommandHintLine(cr *CommandRegistry) string {

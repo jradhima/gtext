@@ -1,11 +1,5 @@
 package main
 
-import (
-	"bufio"
-	"fmt"
-	"os"
-)
-
 type Cursor struct {
 	row, col                 int
 	renderedRow, renderedCol int
@@ -20,29 +14,6 @@ func NewCursor(row, col int) *Cursor {
 	return &cursor
 }
 
-// getPosition returns the position of the cursor on the screen
-func (c *Cursor) getPosition() (int, int, error) {
-	_, err := fmt.Print(CURSOR_POSITION)
-	if err != nil {
-		return 0, 0, fmt.Errorf("error requesting cursor position: %w", err)
-	}
-
-	reader := bufio.NewReader(os.Stdin)
-	b, err := reader.ReadBytes('R')
-	if err != nil {
-		return 0, 0, fmt.Errorf("error reading stdin for cursor: %w", err)
-	} else if b[0] != '\x1b' || b[1] != '[' {
-		return 0, 0, fmt.Errorf("cursor position return not valid: %v", b)
-	}
-
-	var nrow, ncol int
-	_, err = fmt.Sscanf(string(b[1:]), "[%d;%dR", &nrow, &ncol)
-	if err != nil {
-		return 0, 0, fmt.Errorf("error parsing cursor position return: %w", err)
-	}
-	return nrow, ncol, nil
-}
-
 func (c *Cursor) coords() (int, int) {
 	return c.row, c.col
 }
@@ -55,4 +26,47 @@ func (c *Cursor) screenCoords() (int, int) {
 func (c *Cursor) moveTo(row, col int) {
 	c.row = row
 	c.col = col
+}
+
+// updateRenderedPos updates the rendered position so the cursor is visible
+func (c *Cursor) updateRenderedPos(view *View, content string, tabsize int) {
+	c.renderedRow = c.row - view.rowOffset + view.topMargin
+	c.renderedCol = c.calculateRenderCol(content, tabsize, c.col) + view.leftMargin
+}
+
+// calculateRenderCol returns the position of the cursor on the rendered line
+func (c *Cursor) calculateRenderCol(content string, tabSize int, col int) int {
+	rCol := 0
+	for i, r := range content {
+		if i >= col {
+			break
+		}
+		if r == TAB {
+			rCol += (tabSize - 1) - (rCol % tabSize)
+		}
+		rCol++
+	}
+	return rCol
+}
+
+func (c *Cursor) setRowTo(newRow int, doc *Document) {
+	if newRow == c.row {
+		return
+	}
+	maxValidRow := doc.lineCount() - 1
+	if maxValidRow < 0 {
+		maxValidRow = 0
+	}
+	c.row = newRow
+	if c.row < 0 {
+		c.row = 0
+	}
+	if c.row > maxValidRow {
+		c.row = maxValidRow
+	}
+	c.col = c.anchor
+	targetLength := doc.getLineLength(c.row)
+	if c.col > targetLength {
+		c.col = targetLength
+	}
 }

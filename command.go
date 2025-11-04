@@ -4,7 +4,7 @@ type Command struct {
 	key    rune
 	name   string
 	desc   string
-	action func(e *Editor)
+	action func()
 }
 
 type CommandRegistry struct {
@@ -22,9 +22,9 @@ func (cr *CommandRegistry) register(cmd Command) {
 	cr.cmds[cmd.key] = cmd
 }
 
-func (cr *CommandRegistry) execute(e *Editor, key rune) bool {
+func (cr *CommandRegistry) execute(key rune) bool {
 	if cmd, ok := cr.cmds[key]; ok {
-		cmd.action(e)
+		cmd.action()
 		return true
 	}
 	return false

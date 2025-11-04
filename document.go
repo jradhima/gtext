@@ -211,12 +211,10 @@ func (d *Document) insertNewLine(row, col int) (newRow, newCol int, err error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("could not replace line at current row %d: %w", row, err)
 	}
-
 	err = d.addLine(row+1, string(nextLineRunes))
 	if err != nil {
 		return 0, 0, fmt.Errorf("could not add remainder line at next row %d: %w", row, err)
 	}
-
 	return row + 1, 0, nil
 }
 
@@ -226,11 +224,9 @@ func (d *Document) mergeLines(row int) (newRow, newCol int, err error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("could not merge lines at row %d: %w", row, err)
 	}
-
 	if row == 0 {
 		return 0, 0, nil
 	}
-
 	lineContent, err := d.getLine(row)
 	if err != nil {
 		return 0, 0, fmt.Errorf("could not get line at row %d: %w", row, err)
@@ -247,7 +243,6 @@ func (d *Document) mergeLines(row int) (newRow, newCol int, err error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("could not remove line at row %d: %w", row, err)
 	}
-
 	prevLineLength := len([]rune(prevLineContent))
 	return row - 1, prevLineLength, nil
 }
@@ -260,11 +255,9 @@ func (d *Document) Load(r io.Reader) error {
 		content := scanner.Text()
 		lines = append(lines, line{content: content, render: d.renderLine(content)})
 	}
-
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error while loading file: %w", err)
 	}
-
 	if len(lines) == 0 {
 		d.lines = []line{{"", ""}}
 	} else {
@@ -295,12 +288,10 @@ func (d *Document) Save(w io.Writer) (int, error) {
 		builder.WriteString(line.content)
 		builder.WriteRune('\n')
 	}
-
 	n, err := w.Write([]byte(builder.String()))
 	if err != nil {
 		return 0, fmt.Errorf("error writing file: %w", err)
 	}
-
 	return n, nil
 }
 
@@ -319,6 +310,5 @@ func (d *Document) SaveToDisk() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to write content of file %s: %w", d.fileName, err)
 	}
-
 	return n, nil
 }
