@@ -34,6 +34,7 @@ type Editor struct {
 	quitChan     chan struct{}
 	exiting      bool
 	exitCode     int
+	clearBuffer  bool
 	shutdownOnce sync.Once
 }
 
@@ -52,20 +53,21 @@ type KeyEvent struct {
 func NewEditor(r *os.File, fileName string) *Editor {
 	cfg := loadConfig()
 	e := &Editor{
-		reader:    bufio.NewReader(r),
-		view:      NewView(1, 1, cfg),
-		cursor:    NewCursor(0, 0),
-		finder:    &Finder{},
-		inputChan: make(chan KeyEvent, 32),
-		document:  NewDocument(fileName, cfg),
-		config:    cfg,
-		mode:      EditMode,
-		status:    "Edit Mode",
-		buffer:    make([]string, 0),
-		commands:  &CommandRegistry{},
-		exiting:   false,
-		quitChan:  make(chan struct{}),
-		exitCode:  0,
+		reader:      bufio.NewReader(r),
+		view:        NewView(1, 1, cfg),
+		cursor:      NewCursor(0, 0),
+		finder:      &Finder{},
+		inputChan:   make(chan KeyEvent, 32),
+		document:    NewDocument(fileName, cfg),
+		config:      cfg,
+		mode:        EditMode,
+		status:      "Edit Mode",
+		buffer:      make([]string, 0),
+		commands:    &CommandRegistry{},
+		exiting:     false,
+		quitChan:    make(chan struct{}),
+		exitCode:    0,
+		clearBuffer: false,
 	}
 	e.registerCommands()
 	return e
@@ -126,6 +128,10 @@ func (e *Editor) handleSave() {
 }
 
 func (e *Editor) handleCut() {
+	if e.clearBuffer {
+		e.buffer = e.buffer[:0]
+		e.clearBuffer = false
+	}
 	currentRow := e.cursor.row
 	if currentRow == e.document.lineCount()-1 {
 		e.moveUp()
@@ -144,6 +150,10 @@ func (e *Editor) handleCut() {
 }
 
 func (e *Editor) handleCopy() {
+	if e.clearBuffer {
+		e.buffer = e.buffer[:0]
+		e.clearBuffer = false
+	}
 	currentRow := e.cursor.row
 	content, err := e.document.getLine(currentRow)
 	if content == "" {
@@ -170,8 +180,8 @@ func (e *Editor) handlePaste() {
 		e.moveDown()
 		e.setDirty()
 	}
-	e.buffer = make([]string, 0)
 	e.setStatus(fmt.Sprintf("pasted %d lines", bufferLen), 1)
+	e.clearBuffer = true
 }
 
 func (e *Editor) handleFind() {
