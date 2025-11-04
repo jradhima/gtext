@@ -13,7 +13,7 @@ import (
 
 // const and setup
 
-const VERSION = "1.0.0"
+const VERSION = "1.1.0"
 
 const (
 	ErrReturnSeqTerminator = gtextError("unexpected return sequence terminator")
@@ -33,7 +33,6 @@ type Editor struct {
 	commands     *CommandRegistry
 	quitChan     chan struct{}
 	exiting      bool
-	shutdownMsg  string
 	exitCode     int
 	shutdownOnce sync.Once
 }
@@ -53,21 +52,20 @@ type KeyEvent struct {
 func NewEditor(r *os.File, fileName string) *Editor {
 	cfg := loadConfig()
 	e := &Editor{
-		reader:      bufio.NewReader(r),
-		view:        NewView(1, 1, cfg),
-		cursor:      NewCursor(0, 0),
-		finder:      &Finder{},
-		inputChan:   make(chan KeyEvent, 32),
-		document:    NewDocument(fileName, cfg),
-		config:      cfg,
-		mode:        EditMode,
-		status:      "Edit Mode",
-		buffer:      make([]string, 0),
-		commands:    &CommandRegistry{},
-		exiting:     false,
-		quitChan:    make(chan struct{}),
-		shutdownMsg: "",
-		exitCode:    0,
+		reader:    bufio.NewReader(r),
+		view:      NewView(1, 1, cfg),
+		cursor:    NewCursor(0, 0),
+		finder:    &Finder{},
+		inputChan: make(chan KeyEvent, 32),
+		document:  NewDocument(fileName, cfg),
+		config:    cfg,
+		mode:      EditMode,
+		status:    "Edit Mode",
+		buffer:    make([]string, 0),
+		commands:  &CommandRegistry{},
+		exiting:   false,
+		quitChan:  make(chan struct{}),
+		exitCode:  0,
 	}
 	e.registerCommands()
 	return e
@@ -186,13 +184,13 @@ func (e *Editor) handleFind() {
 		e.setStatus("Edit mode", 2)
 		e.finder.reset()
 	default:
-		e.requestShutdown("Unknown editor mode", 1)
+		e.requestShutdown(1)
 	}
 }
 
 func (e *Editor) handleQuit() {
 	if e.exiting {
-		e.requestShutdown("Quit", 0)
+		e.requestShutdown(0)
 		return
 	}
 
@@ -206,12 +204,11 @@ func (e *Editor) handleQuit() {
 		}()
 		return
 	}
-	e.requestShutdown("Quit", 0)
+	e.requestShutdown(0)
 }
 
-func (e *Editor) requestShutdown(msg string, code int) {
+func (e *Editor) requestShutdown(code int) {
 	e.shutdownOnce.Do(func() {
-		e.shutdownMsg = msg
 		e.exitCode = code
 		close(e.quitChan)
 	})
@@ -440,7 +437,7 @@ func (e *Editor) handlePrintableRune(r rune) {
 	e.moveRight()
 }
 
-func (e *Editor) Start() (string, int) {
+func (e *Editor) Start() int {
 	e.document.LoadFromDisk()
 	go e.readInputStream()
 
@@ -451,12 +448,12 @@ func (e *Editor) Start() (string, int) {
 		select {
 		case res := <-e.inputChan:
 			if res.err != nil {
-				return fmt.Sprintf("%s", res.err), 1
+				return 1
 			}
 			e.processKeyPress(res.r)
 		case <-ticker.C:
 		case <-e.quitChan:
-			return e.shutdownMsg, e.exitCode
+			return e.exitCode
 		}
 
 		e.updateComponents()
@@ -469,7 +466,7 @@ func (e *Editor) updateComponents() {
 	// 1. View updates its dimensions
 	rows, cols, err := getWindowSize()
 	if err != nil {
-		e.requestShutdown(err.Error(), 1)
+		e.requestShutdown(1)
 	}
 	e.view.updateSize(rows, cols) // Assumes View has this method
 
@@ -478,7 +475,7 @@ func (e *Editor) updateComponents() {
 	// 3. Cursor updates its rendered position based on View
 	currentLine, err := e.document.getLine(e.cursor.row)
 	if err != nil {
-		e.requestShutdown("failed to read current line", 3)
+		e.requestShutdown(3)
 		return
 	}
 	// Assumes Cursor has this method
@@ -520,7 +517,7 @@ func Run(fileName string) int {
 	}
 
 	editor := NewEditor(os.Stdin, fileName)
-	_, exitCode := editor.Start()
+	exitCode := editor.Start()
 
 	err = term.Restore(int(os.Stdin.Fd()), oldState)
 	if err != nil {
